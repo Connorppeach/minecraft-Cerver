@@ -1,0 +1,199 @@
+#include <stdlib.h>
+#include <string.h>
+#include "rw.h"
+
+#define SEGMENT_BITS 0x7F
+#define CONTINUE_BIT 0x80
+
+int read_bool(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, uint8_t *out) {
+  if (*pos+1 > max)
+    return ERR_TOO_FEW_BYTES;
+  (*pos)++;
+  uint8_t m_out = *((*packet_buffer)++);
+  if (m_out > 1)
+    return ERR_INVALID_RANGE;
+  *out = m_out;
+  
+  return 0;
+}
+
+int read_byte(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, int8_t *out) {
+  if (*pos+1 >= max)
+    return ERR_TOO_FEW_BYTES;
+
+  (*pos)++;
+  *out = *((*packet_buffer)++);
+  
+  return 0;
+}
+
+int read_ubyte(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, uint8_t *out) {
+  if (*pos+1 > max)
+    return ERR_TOO_FEW_BYTES;
+
+  (*pos)++;
+  *out = *((*packet_buffer)++);
+  
+  return 0;
+}
+
+int read_short(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, int16_t *out) {
+  if (*pos+2 > max)
+    return ERR_TOO_FEW_BYTES;
+
+  (*pos)+=2;
+  *out = *((*packet_buffer)++)<<8;
+  *out |= *((*packet_buffer)++);
+  
+  return 0;
+}
+int read_ushort(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, uint16_t *out) {
+  if (*pos+2 > max)
+    return ERR_TOO_FEW_BYTES;
+
+  (*pos)+=2;
+  *out = *((*packet_buffer)++)<<8;
+  *out |= *((*packet_buffer)++);
+  
+  return 0;
+}
+
+int read_int(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, int32_t *out) {
+  if (*pos+4 > max)
+    return ERR_TOO_FEW_BYTES;
+
+  (*pos)+=4;
+  *out = *((*packet_buffer)++)<<24;
+  *out |= *((*packet_buffer)++)<<16;
+  *out |= *((*packet_buffer)++)<<8;
+  *out |= *((*packet_buffer)++);
+  
+  return 0;
+}
+int read_uint(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, uint32_t *out) {
+  if (*pos+4 > max)
+    return ERR_TOO_FEW_BYTES;
+
+  (*pos)+=4;
+  *out = *((*packet_buffer)++)<<24;
+  *out |= *((*packet_buffer)++)<<16;
+  *out |= *((*packet_buffer)++)<<8;
+  *out |= *((*packet_buffer)++);
+  
+  return 0;
+}
+int read_long(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, int64_t *out) {
+  if (*pos+8 > max)
+    return ERR_TOO_FEW_BYTES;
+
+  (*pos)+=8;
+  *out = ((uint64_t)*((*packet_buffer)++))<<56;
+  *out |= ((uint64_t)*((*packet_buffer)++))<<48;
+  *out |= ((uint64_t)*((*packet_buffer)++))<<40;
+  *out |= ((uint64_t)*((*packet_buffer)++))<<32;
+  *out |= ((uint64_t)*((*packet_buffer)++))<<24;
+  *out |= ((uint64_t)*((*packet_buffer)++))<<16;
+  *out |= ((uint64_t)*((*packet_buffer)++))<<8;
+  *out |= ((uint64_t)*((*packet_buffer)++));
+  
+  return 0;
+}
+int read_float(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, float *out) {
+  if (*pos+4 > max)
+    return ERR_TOO_FEW_BYTES;
+  uint32_t out_l;
+  (*pos)+=4;
+  out_l = *((*packet_buffer)++)<<24;
+  out_l |= *((*packet_buffer)++)<<16;
+  out_l |= *((*packet_buffer)++)<<8;
+  out_l |= *((*packet_buffer)++);
+  memcpy(&out, &out_l, sizeof(out_l));
+  return 0;
+}
+
+int read_double(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, int64_t *out) {
+  if (*pos+8 > max)
+    return ERR_TOO_FEW_BYTES;
+
+  uint64_t out_l;
+  (*pos)+=8;
+  out_l = ((uint64_t)*((*packet_buffer)++))<<56;
+  out_l |= ((uint64_t)*((*packet_buffer)++))<<48;
+  out_l |= ((uint64_t)*((*packet_buffer)++))<<40;
+  out_l |= ((uint64_t)*((*packet_buffer)++))<<32;
+  out_l |= ((uint64_t)*((*packet_buffer)++))<<24;
+  out_l |= ((uint64_t)*((*packet_buffer)++))<<16;
+  out_l |= ((uint64_t)*((*packet_buffer)++))<<8;
+  out_l |= ((uint64_t)*((*packet_buffer)++));
+  memcpy(&out, &out_l, sizeof(out_l));
+  
+  return 0;
+}
+
+int read_var_int(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, int32_t *out) {
+  if (*pos+1 > max)
+    return ERR_TOO_FEW_BYTES;
+
+  int32_t value = 0;
+  int32_t position = 0;
+  uint8_t currentByte;
+  
+  while (true) {
+    int read_err = read_ubyte(packet_buffer, pos, max, &currentByte);
+    if (read_err)
+      return read_err;
+    value |= (currentByte & SEGMENT_BITS) << position;
+    
+    if ((currentByte & CONTINUE_BIT) == 0) break;
+    
+    position += 7;
+    
+    if (position >= 32) return ERR_VAR_NUM_TOO_LARGE;
+  }
+  *out = value;
+  return 0;
+}
+
+int read_var_long(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, int64_t *out) {
+  if (*pos+1 > max)
+    return ERR_TOO_FEW_BYTES;
+
+  int64_t value = 0;
+  int32_t position = 0;
+  uint8_t currentByte;
+  
+  while (true) {
+    int read_err = read_ubyte(packet_buffer, pos, max, &currentByte);
+    if (read_err)
+      return read_err;
+    value |= (currentByte & (int64_t)SEGMENT_BITS) << position;
+    
+    if ((currentByte & CONTINUE_BIT) == 0) break;
+    
+    position += 7;
+    
+    if (position >= 64) return ERR_VAR_NUM_TOO_LARGE;
+  }
+  *out = value;
+  return 0;
+}
+
+int read_var_str(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, lstr *out) {
+  int len;
+  int error = read_var_int(packet_buffer, pos, max, &len);
+  if(error) return error;
+  out->len = len;
+  out->str = *packet_buffer;
+  *packet_buffer += len;
+  return 0;
+}
+int read_uuid(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, uuid *out) {
+  int error = read_long(packet_buffer, pos, max, &out->high);
+  if(error) return error;
+  error = read_long(packet_buffer, pos, max, &out->low);
+  return error;
+}
+
+
+
+// writers should go here

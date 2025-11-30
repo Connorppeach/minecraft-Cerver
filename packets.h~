@@ -1,0 +1,231 @@
+#include <stdint.h>
+
+#include "types.h"
+#include "player.h"
+#include "rw.h"
+
+#if defined(PACKET_IMPL)
+#if defined(PACKET_READ_IMPL)
+
+#define PACKET(name, ...)						\
+  int read_##name (uint8_t **packet_buffer, unsigned int *pos, unsigned int max, name *out) { \
+  int error = 0;							\
+  __VA_ARGS__								\
+    return 0;								\
+  }
+#define R(type, field_type, field_name)					\
+  error = read_##type(packet_buffer, pos, max, &out->field_name);	\
+  if(error) return error;
+
+#define RL(type, field_type, field_name, len_field_name)		\
+  error = read_var_int(packet_buffer, pos, max, &out->len_field_name);	\
+  if (error) return error;						\
+  out->field_name = (field_type*) malloc(out->len_field_name * sizeof(field_type)); \
+  field_type *field_name##_ptr = out->field_name;			\
+  for (int i = 0; i < out->len_field_name; i++) {			\
+    error = read_##field_type(packet_buffer, pos, max, (field_name##_ptr++)); \
+    if(error) return error;						\
+  }									
+#elif defined(PACKET_WRITE_IMPL)
+
+#define PACKET(name, ...)						\
+  int write_##name (uint8_t **packet_buffer, unsigned int *pos, unsigned int max, name out) { \
+    int error = 0;							\
+    __VA_ARGS__								\
+    return 0;								\
+  }
+#define R(type, field_type, field_name)					\
+  error = write_##type(packet_buffer, pos, max, out.field_name);	\
+  if(error) return error;
+
+#define RL(type, field_type, field_name, len_field_name)		\
+  error = write_var_int(packet_buffer, pos, max, out.len_field_name);	\
+  if (error) return error;						\
+  field_type *field_name##_ptr = out.field_name;			\
+  for (int i = 0; i < out.len_field_name; i++) {			\
+    (field_name##_ptr++);						\
+    error = write_##field_type(packet_buffer, pos, max, *field_name##_ptr); \
+    if(error) return error;						\
+  }									
+
+#else
+#error "attempted to use a packet impl, but didnt specify a valid one"
+#endif
+
+#else
+#define PACKET(name, ...)					\
+  int read_##name (uint8_t **packet_buffer, unsigned int *pos, unsigned int max, name *out); \
+  int write_##name (uint8_t **packet_buffer, unsigned int *pos, unsigned int max, name out);
+#endif
+
+
+
+#ifndef _PACKETS_H_
+#define _PACKETS_H_
+// data types -- pt.2
+typedef struct Game_Profile_Property {
+  lstr name;
+  lstr value;
+  lstr signature;
+} game_profile_property;
+
+typedef struct Game_Profile {
+  uuid uuid;
+  lstr username;
+  game_profile_property *properties;
+  int game_profile_property_count;
+} game_profile;
+
+
+// now to the actual packets
+
+// handshaking phase
+typedef struct Handshake_s {
+  // data
+  int32_t protocol_version;
+  lstr server_address;
+  uint16_t port;
+  int32_t intent;
+} handshake;
+#define HANDSHAKE_ID 0
+
+// login phase
+typedef struct Login_Start_s {
+  // data
+  lstr name;
+  uuid uuid;
+} login_start;
+
+typedef struct Disconnect_Login_c {
+  // data
+  lstr json;
+} disconnect_login;
+
+typedef struct Login_Success_c {
+  game_profile profile;
+} login_success;
+
+// server ones
+#define DISCONNECT_LOGIN_ID 0
+#define ENCRYPTION_REQEUST_ID (DISCONNECT_LOGIN_ID+1)
+#define LOGIN_SUCCESS_ID (ENCRYPTION_REQEUST_ID+1)
+#define SET_COMPRESSION_ID (LOGIN_SUCCESS_ID+1)
+#define LOGIN_PLUGIN_REQUEST_ID (SET_COMPRESSION_ID+1)
+#define LOGIN_COOKIE_REQUEST_ID (LOGIN_PLUGIN_REQUEST_ID+1)
+// client ones
+#define LOGIN_START_ID 0
+#define ENCRYPTION_RESPONSE_ID (LOGIN_START_ID+1)
+#define LOGIN_PLUGIN_RESPONSE_ID (ENCRYPTION_RESPONSE_ID+1)
+#define LOGIN_ACKNOWLEDGED_ID (LOGIN_PLUGIN_RESPONSE_ID+1)
+#define LOGIN_COOKIE_RESPONSE_ID (LOGIN_ACKNOWLEDGED_ID+1)
+
+
+// configuration
+typedef struct Client_Information_s {
+  uint8_t *raw_data;
+  // data
+  lstr locale;
+  int8_t view_distance;
+  int32_t chat_mode;
+  uint8_t chat_colors;
+  uint8_t displayed_skin_parts;
+  int32_t main_hand;
+  uint8_t enable_text_filtering;
+  uint8_t allow_server_listings;
+  int32_t particle_status;
+} client_information_configuration;
+
+
+// server ones
+#define COOKIE_REQUEST_ID 0
+#define CLIENTBOUND_PLUGIN_MESSAGE_ID (COOKIE_REQUEST_ID+1)
+#define DISCONNECT_CONFIGURATION_ID (CLIENTBOUND_PLUGIN_MESSAGE_ID+1)
+#define FINISH_CONFIGURATION_ID (DISCONNECT_CONFIGURATION_ID+1)
+#define CLIENTBOUND_KEEPALIVE_CONFIGURATION_ID (FINISH_CONFIGURATION_ID+1)
+#define PING_CONFIGURATION_ID (CLIENTBOUND_KEEPALIVE_CONFIGURATION_ID+1)
+#define RESET_CHAT_ID (PING_CONFIGURATION_ID+1)
+#define REGISTRY_DATA_ID (RESET_CHAT_ID+1)
+#define REMOVE_RESOURCE_PACK_CONFIGURATION_ID (REGISTRY_DATA_ID+1)
+#define ADD_RESOURCE_PACK_CONFIGURATION_ID (REMOVE_RESOURCE_PACK_CONFIGURATION_ID+1)
+#define STORE_COOKIE_CONFIGURATION_ID (ADD_RESOURCE_PACK_CONFIGURATION_ID+1)
+#define TRANSFER_CONFIGURATION_ID (STORE_COOKIE_CONFIGURATION_ID+1)
+#define FEATURE_FLAGS_ID (TRANSFER_CONFIGURATION_ID+1)
+#define UPDATE_TAGS_ID (FEATURE_FLAGS_ID+1)
+#define CLIENTBOUND_KNOWN_PACKS_ID (UPDATE_TAGS_ID+1)
+#define CUSTOM_REPORT_DETAILS_CONFIGURATION_ID (CLIENTBOUND_KNOWN_PACKS_ID+1)
+#define SERVER_LINKS_CONFIGURATION_ID (CUSTOM_REPORT_DETAILS_CONFIGURATION_ID+1)
+#define CLEAR_DIALOG_CONFIGURATION_ID (SERVER_LINKS_CONFIGURATION_ID+1)
+#define SHOW_DIALOG_CONFIGURATION_ID (CLEAR_DIALOG_CONFIGURATION_ID+1)
+
+// client ones
+#define CLIENT_INFORMATION_CONFIGURATION_ID 0
+
+
+
+
+#endif
+
+
+
+
+
+
+
+PACKET(handshake,
+       R(var_int, int32_t, protocol_version);
+       R(var_str, lstr, server_address);
+       R(ushort, uint16_t, port);
+       R(var_int, int32_t, intent);
+       );
+
+PACKET(game_profile_property,
+       R(var_str, lstr, name);
+       R(var_str, lstr, value);
+       )
+
+PACKET(game_profile,
+       R(uuid, uuid, uuid);
+       R(var_str, lstr, username);
+       RL(game_profile_property, game_profile_property, properties, game_profile_property_count);
+       );
+
+PACKET(login_start,
+       R(var_str, lstr, name);
+       R(uuid, uuid, uuid);
+       );
+
+PACKET(login_success,
+       R(game_profile, game_profile, profile);
+       );
+
+
+
+
+PACKET(disconnect_login,
+       R(var_str, lstr, json);
+       );
+
+PACKET(client_information_configuration,
+       R(var_str, lstr, locale);
+       R(byte, int8_t, view_distance);
+       R(var_int, int32_t, chat_mode);
+       R(bool, uint8_t, chat_colors);
+       R(ubyte, uint8_t, displayed_skin_parts);
+       R(var_int, int32_t, main_hand);
+       R(bool, uint8_t, enable_text_filtering);
+       R(bool, uint8_t, allow_server_listings);
+       R(var_int, int32_t, particle_status);
+       );
+
+// debug printers
+void print_handshake(handshake shake);
+void print_login_start(login_start shake);
+void print_client_information_configuration(client_information_configuration config_s);
+
+// these should probably not be defined, especially R and RL
+#undef PACKET
+#undef R
+#undef RL
+
+
+

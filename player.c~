@@ -1,0 +1,17 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+
+#include "player.h"
+
+player *create_player(int fd) {
+  player *m_player = (player*)malloc(sizeof(player));
+  m_player->conn.fd = fd;
+  return m_player;
+}
+
+void free_player(player *m_player) {
+  close(m_player->conn.fd);
+  free(m_player);
+}
