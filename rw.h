@@ -1,3 +1,5 @@
+#ifndef _H_RW_CERVER_
+#define _H_RW_CERVER_
 #include <stdint.h>
 #include "error_codes.h"
 #include "types.h"
@@ -33,3 +35,5 @@ int write_var_int(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, 
 int write_var_long(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, int64_t value);
 int write_var_str(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, lstr value);
 int write_uuid(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, uuid value);
+
+#endif // _H_RW_CERVER_

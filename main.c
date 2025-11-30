@@ -99,7 +99,6 @@ void handle_player_packet(int player_num, uint8_t *packet_buf, unsigned int buf_
     handshake shake;
     int error = read_handshake(&buf_ptr, &pos, buf_len, &shake);
     printf("error: %d\n", error);
-    print_handshake(shake);
     if(shake.intent != 2) {
       deallocate_player(player_num);
       free(raw_data);
@@ -110,7 +109,6 @@ void handle_player_packet(int player_num, uint8_t *packet_buf, unsigned int buf_
     if (packet_type == LOGIN_START_ID) {
       login_start login_s;
       read_login_start(&buf_ptr, &pos, buf_len, &login_s);
-      print_login_start(login_s);
       uint8_t packet_buf[32];
       uint32_t max = 0;
       uint8_t *packet_ptr = packet_buf+4;
@@ -125,14 +123,13 @@ void handle_player_packet(int player_num, uint8_t *packet_buf, unsigned int buf_
     if (packet_type == CLIENT_INFORMATION_CONFIGURATION_ID) {
       client_information_configuration config_s;
       read_client_information_configuration(&buf_ptr, &pos, buf_len, &config_s);
-      print_client_information_configuration(config_s);
       // send our known packs
       uint8_t packet_buf[512];
       uint32_t max = 0;
       uint8_t *packet_ptr = packet_buf+4;
       write_var_int(&packet_ptr, &max, 512, CLIENTBOUND_KNOWN_PACKS_ID);
-      clientbound_known_pack packs[] = { (clientbound_known_pack){NULL, {"minecraft", strlen("minecraft")}, {"core", strlen("core")}, {"1.21.8", strlen("1.21.8")}} };
-      write_clientbound_known_packs(&packet_ptr, &max, 512, (clientbound_known_packs){NULL, packs, sizeof(packs)});
+      clientbound_known_pack packs[] = { (clientbound_known_pack){{"minecraft", strlen("minecraft")}, {"core", strlen("core")}, {"1.21.8", strlen("1.21.8")}} };
+      write_clientbound_known_packs(&packet_ptr, &max, 512, (clientbound_known_packs){packs, sizeof(packs)});
       send_packet(packet_buf, max, players[player_num]->conn.fd);
 
     }

@@ -1,10 +1,21 @@
 #include <stdint.h>
-
 #include "types.h"
 #include "player.h"
 #include "rw.h"
 
+
 #if defined(PACKET_IMPL)
+
+#undef PACKET_IMPL
+#define PACKET_READ_IMPL
+#include "packets_single_header.h"
+#undef PACKET_READ_IMPL
+#define PACKET_WRITE_IMPL
+#include "packets_single_header.h"
+#undef PACKET_READ_IMPL
+
+#endif
+
 #if defined(PACKET_READ_IMPL)
 
 #define PACKET(name, ...)						\
@@ -46,14 +57,21 @@
     if(error) return error;						\
   }									
 
-#else
-#error "attempted to use a packet impl, but didnt specify a valid one"
-#endif
 
 #else
-#define PACKET(name, ...)					\
+#define PACKET(name, ...)						\
+  typedef struct name##_s {						\
+    __VA_ARGS__								\
+  } name;								\
   int read_##name (uint8_t **packet_buffer, unsigned int *pos, unsigned int max, name *out); \
-  int write_##name (uint8_t **packet_buffer, unsigned int *pos, unsigned int max, name out);
+  int write_##name (uint8_t **packet_buffer, unsigned int *pos, unsigned int max, name out); 
+#define R(type, field_type, field_name)		\
+  field_type field_name
+
+#define RL(type, field_type, field_name, len_field_name)		\
+  field_type *field_name;						\
+  int len_field_name;
+
 #endif
 
 
@@ -61,47 +79,10 @@
 #ifndef _PACKETS_H_
 #define _PACKETS_H_
 // data types -- pt.2
-typedef struct Game_Profile_Property {
-  lstr name;
-  lstr value;
-  lstr signature;
-} game_profile_property;
 
-typedef struct Game_Profile {
-  uuid uuid;
-  lstr username;
-  game_profile_property *properties;
-  int game_profile_property_count;
-} game_profile;
-
-
-// now to the actual packets
-
-// handshaking phase
-typedef struct Handshake_s {
-  // data
-  int32_t protocol_version;
-  lstr server_address;
-  uint16_t port;
-  int32_t intent;
-} handshake;
 #define HANDSHAKE_ID 0
 
-// login phase
-typedef struct Login_Start_s {
-  // data
-  lstr name;
-  uuid uuid;
-} login_start;
 
-typedef struct Disconnect_Login_c {
-  // data
-  lstr json;
-} disconnect_login;
-
-typedef struct Login_Success_c {
-  game_profile profile;
-} login_success;
 
 // server ones
 #define DISCONNECT_LOGIN_ID 0
@@ -118,37 +99,7 @@ typedef struct Login_Success_c {
 #define LOGIN_COOKIE_RESPONSE_ID (LOGIN_ACKNOWLEDGED_ID+1)
 
 
-// configuration
-typedef struct Client_Information_s {
-  uint8_t *raw_data;
-  // data
-  lstr locale;
-  int8_t view_distance;
-  int32_t chat_mode;
-  uint8_t chat_colors;
-  uint8_t displayed_skin_parts;
-  int32_t main_hand;
-  uint8_t enable_text_filtering;
-  uint8_t allow_server_listings;
-  int32_t particle_status;
-} client_information_configuration;
 
-
-
-typedef struct Clientbound_Known_Pack {
-  uint8_t *raw_data;
-  // data
-  lstr namespace;
-  lstr id;
-  lstr version;
-} clientbound_known_pack;
-
-typedef struct Clientbound_Known_Packs_c {
-  uint8_t *raw_data;
-  // data
-  clientbound_known_pack *packs;
-  int num_packs;
-} clientbound_known_packs;
 
 
 
