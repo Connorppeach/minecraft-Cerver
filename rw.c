@@ -1,5 +1,7 @@
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
+
 #include "rw.h"
 
 #define SEGMENT_BITS 0x7F
@@ -315,7 +317,7 @@ int write_float(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, fl
   return 0;
 }
 
-int write_double(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, int64_t val_double) {
+int write_double(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, double val_double) {
   if (*pos+8 > max)
     return ERR_TOO_FEW_BYTES;
   uint64_t val = 0;
@@ -387,3 +389,52 @@ int write_uuid(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, uui
   error = write_long(packet_buffer, pos, max, val.low);
   return error;
 }
+
+
+void print_bool(uint8_t val) {
+  if(val)
+    printf("true");
+  else
+    printf("false");
+};
+void print_byte(int8_t val) {
+  printf("%d", val);
+};
+void print_ubyte(uint8_t val) {
+  printf("%hhu", val);
+};
+void print_short(int16_t val) {
+  printf("%hd", val);
+};
+void print_ushort(uint16_t val) {
+  printf("%hu", val);
+};
+void print_int(int32_t val) {
+  printf("%d", val);
+};
+void print_uint(uint32_t val) {
+  printf("%d", val);
+};
+void print_long(int64_t val) {
+  printf("%ld", val);
+};
+void print_float(float val_float) {
+  printf("%g", val_float);
+};
+void print_double(double val_double) {
+  printf("%g", val_double);
+};
+void print_var_int(int32_t value) {
+  print_int(value);
+};
+void print_var_long(int64_t value) {
+  print_long(value);
+};
+void print_var_str(lstr value) {
+  printf("%.*s", value.len, value.str);
+};
+void print_uuid(uuid value) {
+  print_long(value.high);
+  printf(" ");
+  print_long(value.low);
+};

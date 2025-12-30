@@ -7,14 +7,25 @@
 #if defined(PACKET_IMPL)
 
 #undef PACKET_IMPL
+// include defs(and structs)
+#include "packets.h"
+
+// include read impls
 #define PACKET_READ_IMPL
-#include "packets_single_header.h"
+#include "packets.h"
 #undef PACKET_READ_IMPL
+// include write impls
 #define PACKET_WRITE_IMPL
-#include "packets_single_header.h"
-#undef PACKET_READ_IMPL
+#include "packets.h"
+#undef PACKET_WRITE_IMPL
+
+#define PACKET_PRINT_IMPL
+#include "packets.h"
+#undef PACKET_PRINT_IMPL
+
 
 #endif
+
 
 #if defined(PACKET_READ_IMPL)
 
@@ -58,13 +69,36 @@
   }									
 
 
+#elif defined(PACKET_PRINT_IMPL)
+
+#define PACKET(name, ...)						\
+  void print_##name (name out) {					\
+    puts(#name);							\
+    __VA_ARGS__								\
+      puts("");								\
+  }
+
+#define R(type, field_type, field_name)					\
+  printf("%s[%s]: ", #field_name, #type);					\
+  print_##type(out.field_name);						\
+  puts("");
+
+#define RL(type, field_type, field_name, len_field_name)		\
+  for (int i = 0; i < out.len_field_name; i++) {			\
+    print_##type(out.field_name[i]);					\
+  }									
+
+
+
+
 #else
 #define PACKET(name, ...)						\
   typedef struct name##_s {						\
     __VA_ARGS__								\
   } name;								\
   int read_##name (uint8_t **packet_buffer, unsigned int *pos, unsigned int max, name *out); \
-  int write_##name (uint8_t **packet_buffer, unsigned int *pos, unsigned int max, name out); 
+  int write_##name (uint8_t **packet_buffer, unsigned int *pos, unsigned int max, name out); \
+  void print_##name (name out); 
 #define R(type, field_type, field_name)		\
   field_type field_name
 
@@ -192,12 +226,8 @@ PACKET(clientbound_known_packs,
        RL(clientbound_known_pack, clientbound_known_pack, packs, num_packs);
        );
 
-// debug printers
-void print_handshake(handshake shake);
-void print_login_start(login_start shake);
-void print_client_information_configuration(client_information_configuration config_s);
 
-// these should probably not be defined, especially R and RL
+// these should probably not be defined globally, especially R and RL
 #undef PACKET
 #undef R
 #undef RL

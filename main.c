@@ -5,6 +5,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h> 
 #include <arpa/inet.h>
 #include "rw.h"
 #include "player.h"
@@ -57,15 +58,17 @@ void send_packet(uint8_t *packet_buf, int packet_len, int fd) {
   packet_ptr = packet_buf+offset;
   // get the final packet length for send()
   int len = header_len+packet_len;
+  
   // send it off
   int sent = send(fd, packet_ptr, len, 0);
-  printf("len %d, sent %d\n", len, sent);
+  
+  printf("header_len %d, packet_len %d,len %d, sent %d\n", header_len, packet_len, len, sent);
 }
 
 void disconnect_player(int player_num) {
   if (players[player_num]->connection_state == 2) {
     char disconnect_message[] = "{\"type\": \"text\", \"text\": \"reason here\"}";
-    lstr json = {disconnect_message, strlen(disconnect_message)};
+    lstr json = lstr_static(disconnect_message);
     disconnect_login packet;
     packet.json = json;
     // write initial packet
@@ -89,49 +92,68 @@ void handle_player_packet(int player_num, uint8_t *packet_buf, unsigned int buf_
     deallocate_player(player_num);
     return;
   }
+  // make a copy of the packet(remember to free if you return)
   uint8_t *raw_data = malloc(buf_len*sizeof(uint8_t));
   uint8_t *buf_ptr = raw_data;
   for(int i = 0; i < buf_len; i++)
     raw_data[i] = packet_buf[i];
+
+
+  // util write packet buffer
+  uint8_t write_buf[512];
+  uint32_t max = 0;
+
   
   printf("got packet id %d with len %d\n", packet_type, buf_len);
   if (players[player_num]->connection_state == 0 && packet_type == HANDSHAKE_ID) {
     handshake shake;
     int error = read_handshake(&buf_ptr, &pos, buf_len, &shake);
-    printf("error: %d\n", error);
-    if(shake.intent != 2) {
+    print_handshake(shake);
+
+    // we dont handle anything other than login right now
+    if (shake.intent != 2) {
+      printf("error: %d\n", error);
       deallocate_player(player_num);
       free(raw_data);
       return;
     }
+    
     players[player_num]->connection_state = shake.intent;
   } else if (players[player_num]->connection_state == 2) {
     if (packet_type == LOGIN_START_ID) {
       login_start login_s;
       read_login_start(&buf_ptr, &pos, buf_len, &login_s);
-      uint8_t packet_buf[32];
-      uint32_t max = 0;
-      uint8_t *packet_ptr = packet_buf+4;
+      print_login_start(login_s);
+      
+      puts("login");
+      uint8_t *packet_ptr = write_buf+4;
+
+      // you shall not pass
+      //disconnect_player(player_num);
+
+      // you may pass
       write_var_int(&packet_ptr, &max, 512, LOGIN_SUCCESS_ID);
-      write_login_success(&packet_ptr, &max, 512, (login_success){{{0, 0}, {"hi", 2}, NULL, 0}});
-      send_packet(packet_buf, max, players[player_num]->conn.fd);
+      write_login_success(&packet_ptr, &max, 512, (login_success){{login_s.uuid, lstr_static("test"), NULL, 0}});
+      send_packet(write_buf, max, players[player_num]->conn.fd);
       
     } else if (packet_type == LOGIN_ACKNOWLEDGED_ID) {
+      puts("login ack");
       players[player_num]->connection_state = 3;
     } 
   } else if (players[player_num]->connection_state == 3) {
     if (packet_type == CLIENT_INFORMATION_CONFIGURATION_ID) {
+      puts("config");
+      //
       client_information_configuration config_s;
       read_client_information_configuration(&buf_ptr, &pos, buf_len, &config_s);
+      print_client_information_configuration(config_s);
       // send our known packs
-      uint8_t packet_buf[512];
-      uint32_t max = 0;
-      uint8_t *packet_ptr = packet_buf+4;
+      uint8_t *packet_ptr = write_buf+4;
       write_var_int(&packet_ptr, &max, 512, CLIENTBOUND_KNOWN_PACKS_ID);
-      clientbound_known_pack packs[] = { (clientbound_known_pack){{"minecraft", strlen("minecraft")}, {"core", strlen("core")}, {"1.21.8", strlen("1.21.8")}} };
-      write_clientbound_known_packs(&packet_ptr, &max, 512, (clientbound_known_packs){packs, sizeof(packs)});
-      send_packet(packet_buf, max, players[player_num]->conn.fd);
-
+      clientbound_known_pack packs[] = { (clientbound_known_pack){lstr_static("minecraft"), lstr_static("core"), lstr_static("1.21.8")} };
+      write_clientbound_known_packs(&packet_ptr, &max, 512, (clientbound_known_packs){packs, 1});
+      print_clientbound_known_packs((clientbound_known_packs){packs, 1});
+      send_packet(write_buf, max, players[player_num]->conn.fd);
     }
   }
     
@@ -150,7 +172,7 @@ int main(void)
     int fdmax;        // maximum file descriptor number
     int listener;     // listening socket descriptor
     int newfd;        // newly accept()ed socket descriptor
-    uint8_t buf[256];    // buffer for client data
+    uint8_t buf[1024];    // buffer for client data
     int nbytes;
     int yes=1;        // for setsockopt() SO_REUSEADDR, below
     socklen_t addrlen;
@@ -218,6 +240,12 @@ int main(void)
                     if ((newfd = accept(listener, (struct sockaddr *)&remoteaddr,
                                                              &addrlen)) == -1) { 
                         perror("accept");
+			int flag = 1;
+			if (setsockopt(newfd, IPPROTO_TCP, TCP_NODELAY, (char *)&flag, sizeof(int)) < 0) {
+			  perror("setsockopt(TCP_NODELAY) failed");
+			  close(newfd);
+			}
+
                     } else {
                         FD_SET(newfd, &master); // add to master set
 			allocate_player(newfd);
@@ -242,19 +270,28 @@ int main(void)
 			
                     } else {
 		      // we got some data from a client
+		      
 		      uint8_t *read_buf = buf;
 		      uint32_t pos = 0;
 		      int packet_len;
 		      
 		      int error = read_var_int(&read_buf, &pos, nbytes, &packet_len);
-		      if(error) {
+		      if (error) {
 			printf("error: %d\n", error); // todo -- append to backlog
 			deallocate_player(player_num);
 			continue;
 		      }
 		      uint32_t remaining_data = nbytes-(read_buf - buf); 
+
+
 		      if (remaining_data < packet_len) {
-			printf("error: too little data supplied\ndata remaining after read: %d\n", remaining_data);
+			printf("error: too little data supplied\ndata remaining after read: %d\n", remaining_data);// todo -- append to backlog
+			printf("data needed to read more: %d\n", packet_len);
+			deallocate_player(player_num);
+			continue;
+		      }
+		      if (remaining_data > packet_len) {
+			printf("error: too much data supplied\ndata remaining after read: %d\n", remaining_data);
 			printf("data needed to read more: %d\n", packet_len);
 			deallocate_player(player_num);
 			continue;
