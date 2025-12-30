@@ -18,7 +18,7 @@
 #define PACKET_WRITE_IMPL
 #include "packets.h"
 #undef PACKET_WRITE_IMPL
-
+// define printers
 #define PACKET_PRINT_IMPL
 #include "packets.h"
 #undef PACKET_PRINT_IMPL
@@ -35,10 +35,22 @@
   __VA_ARGS__								\
     return 0;								\
   }
+// standard field
 #define R(type, field_type, field_name)					\
   error = read_##type(packet_buffer, pos, max, &out->field_name);	\
   if(error) return error;
+// optional field
+#define O(type, field_type, field_name)					\
+  uint8_t field_name##_error;						\
+  error = read_bool(packet_buffer, pos, max, &field_name##_error);	\
+  if(error) return error;						\
+  if(field_name##_error) {						\
+    out->field_name = malloc(sizeof(type));				\
+    error = read_##type(packet_buffer, pos, max, out->field_name);	\
+    if(error) return error;						\
+  } else out->field_name = NULL
 
+// list field
 #define RL(type, field_type, field_name, len_field_name)		\
   error = read_var_int(packet_buffer, pos, max, &out->len_field_name);	\
   if (error) return error;						\
@@ -60,6 +72,13 @@
   error = write_##type(packet_buffer, pos, max, out.field_name);	\
   if(error) return error;
 
+#define O(type, field_type, field_name)					\
+  if(out.field_name != NULL) {							\
+    error = write_##type(packet_buffer, pos, max, *out.field_name);	\
+    if(error) return error;						\
+  }
+
+
 #define RL(type, field_type, field_name, len_field_name)		\
   error = write_var_int(packet_buffer, pos, max, out.len_field_name);	\
   if (error) return error;						\
@@ -79,9 +98,18 @@
   }
 
 #define R(type, field_type, field_name)					\
-  printf("%s[%s]: ", #field_name, #type);					\
+  printf("%s[%s]: ", #field_name, #type);				\
   print_##type(out.field_name);						\
   puts("");
+
+#define O(type, field_type, field_name)					\
+  printf("%s[%s](O): ", #field_name, #type);				\
+  if(out.field_name != NULL)						\
+    print_##type(*out.field_name);					\
+  else									\
+    printf("N/A");							\
+  puts("");
+
 
 #define RL(type, field_type, field_name, len_field_name)		\
   for (int i = 0; i < out.len_field_name; i++) {			\
@@ -102,9 +130,13 @@
 #define R(type, field_type, field_name)		\
   field_type field_name
 
+#define O(type, field_type, field_name)		\
+  field_type *field_name
+
 #define RL(type, field_type, field_name, len_field_name)		\
   field_type *field_name;						\
   int len_field_name;
+
 
 #endif
 
@@ -112,124 +144,33 @@
 
 #ifndef _PACKETS_H_
 #define _PACKETS_H_
-// data types -- pt.2
-
-#define HANDSHAKE_ID 0
-
-
-
-// server ones
-#define DISCONNECT_LOGIN_ID 0
-#define ENCRYPTION_REQEUST_ID (DISCONNECT_LOGIN_ID+1)
-#define LOGIN_SUCCESS_ID (ENCRYPTION_REQEUST_ID+1)
-#define SET_COMPRESSION_ID (LOGIN_SUCCESS_ID+1)
-#define LOGIN_PLUGIN_REQUEST_ID (SET_COMPRESSION_ID+1)
-#define LOGIN_COOKIE_REQUEST_ID (LOGIN_PLUGIN_REQUEST_ID+1)
-// client ones
-#define LOGIN_START_ID 0
-#define ENCRYPTION_RESPONSE_ID (LOGIN_START_ID+1)
-#define LOGIN_PLUGIN_RESPONSE_ID (ENCRYPTION_RESPONSE_ID+1)
-#define LOGIN_ACKNOWLEDGED_ID (LOGIN_PLUGIN_RESPONSE_ID+1)
-#define LOGIN_COOKIE_RESPONSE_ID (LOGIN_ACKNOWLEDGED_ID+1)
-
-
-
-
-
-
-// server ones
-#define COOKIE_REQUEST_ID 0
-#define CLIENTBOUND_PLUGIN_MESSAGE_ID (COOKIE_REQUEST_ID+1)
-#define DISCONNECT_CONFIGURATION_ID (CLIENTBOUND_PLUGIN_MESSAGE_ID+1)
-#define FINISH_CONFIGURATION_ID (DISCONNECT_CONFIGURATION_ID+1)
-#define CLIENTBOUND_KEEPALIVE_CONFIGURATION_ID (FINISH_CONFIGURATION_ID+1)
-#define PING_CONFIGURATION_ID (CLIENTBOUND_KEEPALIVE_CONFIGURATION_ID+1)
-#define RESET_CHAT_ID (PING_CONFIGURATION_ID+1)
-#define REGISTRY_DATA_ID (RESET_CHAT_ID+1)
-#define REMOVE_RESOURCE_PACK_CONFIGURATION_ID (REGISTRY_DATA_ID+1)
-#define ADD_RESOURCE_PACK_CONFIGURATION_ID (REMOVE_RESOURCE_PACK_CONFIGURATION_ID+1)
-#define STORE_COOKIE_CONFIGURATION_ID (ADD_RESOURCE_PACK_CONFIGURATION_ID+1)
-#define TRANSFER_CONFIGURATION_ID (STORE_COOKIE_CONFIGURATION_ID+1)
-#define FEATURE_FLAGS_ID (TRANSFER_CONFIGURATION_ID+1)
-#define UPDATE_TAGS_ID (FEATURE_FLAGS_ID+1)
-#define CLIENTBOUND_KNOWN_PACKS_ID (UPDATE_TAGS_ID+1)
-#define CUSTOM_REPORT_DETAILS_CONFIGURATION_ID (CLIENTBOUND_KNOWN_PACKS_ID+1)
-#define SERVER_LINKS_CONFIGURATION_ID (CUSTOM_REPORT_DETAILS_CONFIGURATION_ID+1)
-#define CLEAR_DIALOG_CONFIGURATION_ID (SERVER_LINKS_CONFIGURATION_ID+1)
-#define SHOW_DIALOG_CONFIGURATION_ID (CLEAR_DIALOG_CONFIGURATION_ID+1)
-
-// client ones
-#define CLIENT_INFORMATION_CONFIGURATION_ID 0
-
-
-
-
 #endif
 
-
-
-
-
-
-
-PACKET(handshake,
-       R(var_int, int32_t, protocol_version);
-       R(var_str, lstr, server_address);
-       R(ushort, uint16_t, port);
-       R(var_int, int32_t, intent);
-       );
-
-PACKET(game_profile_property,
-       R(var_str, lstr, name);
-       R(var_str, lstr, value);
-       )
-
-PACKET(game_profile,
-       R(uuid, uuid, uuid);
-       R(var_str, lstr, username);
-       RL(game_profile_property, game_profile_property, properties, game_profile_property_count);
-       );
-
-PACKET(login_start,
-       R(var_str, lstr, name);
-       R(uuid, uuid, uuid);
-       );
-
-PACKET(login_success,
-       R(game_profile, game_profile, profile);
+PACKET(NBT,
+       RL(ubyte, uint, data, data_len);
        );
 
 
 
+// now the packets
 
-PACKET(disconnect_login,
-       R(var_str, lstr, json);
-       );
 
-PACKET(client_information_configuration,
-       R(var_str, lstr, locale);
-       R(byte, int8_t, view_distance);
-       R(var_int, int32_t, chat_mode);
-       R(bool, uint8_t, chat_colors);
-       R(ubyte, uint8_t, displayed_skin_parts);
-       R(var_int, int32_t, main_hand);
-       R(bool, uint8_t, enable_text_filtering);
-       R(bool, uint8_t, allow_server_listings);
-       R(var_int, int32_t, particle_status);
-       );
-PACKET(clientbound_known_pack,
-       R(var_str, lstr, namespace);
-       R(var_str, lstr, id);
-       R(var_str, lstr, version);
-       );
-PACKET(clientbound_known_packs,
-       RL(clientbound_known_pack, clientbound_known_pack, packs, num_packs);
-       );
+
+#include "packets/handshake.h"
+#include "packets/login.h"
+#include "packets/configuration.h"
+
+
+
+
+
+
 
 
 // these should probably not be defined globally, especially R and RL
 #undef PACKET
 #undef R
+#undef O
 #undef RL
 
 

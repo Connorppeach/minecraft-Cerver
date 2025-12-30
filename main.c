@@ -11,7 +11,7 @@
 #include "player.h"
 #include "packets.h"
 
-#define PORT 25565   // port we're listening on
+#define PORT 30066   // port we're listening on
 
 #define MAX_PLAYERS 10
 player *players[MAX_PLAYERS];
@@ -83,14 +83,14 @@ void disconnect_player(int player_num) {
     deallocate_player(player_num);
 }
 
-void handle_player_packet(int player_num, uint8_t *packet_buf, unsigned int buf_len) {
+int handle_player_packet(int player_num, uint8_t *packet_buf, unsigned int buf_len) {
   int packet_type;
   unsigned int pos = 0;
   int error = read_var_int(&packet_buf, &pos, buf_len, &packet_type);
   if(error) {
     printf("error in client: %d\n", error);
     deallocate_player(player_num);
-    return;
+    return pos;
   }
   // make a copy of the packet(remember to free if you return)
   uint8_t *raw_data = malloc(buf_len*sizeof(uint8_t));
@@ -115,7 +115,7 @@ void handle_player_packet(int player_num, uint8_t *packet_buf, unsigned int buf_
       printf("error: %d\n", error);
       deallocate_player(player_num);
       free(raw_data);
-      return;
+      return pos;
     }
     
     players[player_num]->connection_state = shake.intent;
@@ -129,12 +129,12 @@ void handle_player_packet(int player_num, uint8_t *packet_buf, unsigned int buf_
       uint8_t *packet_ptr = write_buf+4;
 
       // you shall not pass
-      //disconnect_player(player_num);
+      disconnect_player(player_num);
 
       // you may pass
-      write_var_int(&packet_ptr, &max, 512, LOGIN_SUCCESS_ID);
-      write_login_success(&packet_ptr, &max, 512, (login_success){{login_s.uuid, lstr_static("test"), NULL, 0}});
-      send_packet(write_buf, max, players[player_num]->conn.fd);
+      /* write_var_int(&packet_ptr, &max, 512, LOGIN_SUCCESS_ID); */
+      /* write_login_success(&packet_ptr, &max, 512, (login_success){{login_s.uuid, login_s.name, NULL, 0}}); */
+      /* send_packet(write_buf, max, players[player_num]->conn.fd) */;
       
     } else if (packet_type == LOGIN_ACKNOWLEDGED_ID) {
       puts("login ack");
@@ -159,7 +159,41 @@ void handle_player_packet(int player_num, uint8_t *packet_buf, unsigned int buf_
     
   
   free(raw_data);
-  
+  return pos;
+}
+
+void handle_packet(int player_num, uint8_t *buf, int nbytes) {
+  uint8_t *read_buf = buf;
+  uint32_t pos = 0;
+  int packet_len;
+		      
+  int error = read_var_int(&read_buf, &pos, nbytes, &packet_len);
+  if (error) {
+    printf("error: %d\n", error); // todo -- append to backlog
+    deallocate_player(player_num);
+    return;
+  }
+  uint32_t remaining_data = nbytes-(read_buf - buf); 
+
+
+  if (remaining_data < packet_len) {
+    printf("error: too little data supplied\ndata remaining after read: %d\n", remaining_data);// todo -- append to backlog
+    printf("data needed to read more: %d\n", packet_len);
+    deallocate_player(player_num);
+    return;
+  }
+  int left = nbytes-packet_len-1;
+  uint8_t more = left!=0;
+  uint8_t *left_off = read_buf+packet_len;
+  int read_bytes = handle_player_packet(player_num, read_buf, packet_len);
+  printf("read %d\nleft %d\n\n", read_bytes, left);
+  if (more) {
+    /* printf("error: too much data supplied\ndata left: %d\n", remaining_data); */
+    /* printf("data we haves len: %d\n", packet_len); */
+    /* deallocate_player(player_num) */;
+    handle_packet(player_num, left_off, left);
+    return;
+  }
 }
 
 
@@ -271,32 +305,7 @@ int main(void)
                     } else {
 		      // we got some data from a client
 		      
-		      uint8_t *read_buf = buf;
-		      uint32_t pos = 0;
-		      int packet_len;
-		      
-		      int error = read_var_int(&read_buf, &pos, nbytes, &packet_len);
-		      if (error) {
-			printf("error: %d\n", error); // todo -- append to backlog
-			deallocate_player(player_num);
-			continue;
-		      }
-		      uint32_t remaining_data = nbytes-(read_buf - buf); 
-
-
-		      if (remaining_data < packet_len) {
-			printf("error: too little data supplied\ndata remaining after read: %d\n", remaining_data);// todo -- append to backlog
-			printf("data needed to read more: %d\n", packet_len);
-			deallocate_player(player_num);
-			continue;
-		      }
-		      if (remaining_data > packet_len) {
-			printf("error: too much data supplied\ndata remaining after read: %d\n", remaining_data);
-			printf("data needed to read more: %d\n", packet_len);
-			deallocate_player(player_num);
-			continue;
-		      }
-		      handle_player_packet(player_num, read_buf, remaining_data);
+		      handle_packet(player_num, buf, nbytes);
 		      
                     }
                 }

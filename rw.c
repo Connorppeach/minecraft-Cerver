@@ -186,7 +186,7 @@ int read_var_str(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, l
   int error = read_var_int(packet_buffer, pos, max, &len);
   if(error) return error;
   out->len = len;
-  out->str = *packet_buffer;
+  out->str = (char *)*packet_buffer;
   *packet_buffer += len;
   return 0;
 }
