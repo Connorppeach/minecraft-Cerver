@@ -1,11 +1,17 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
-
 #include "rw.h"
+
+#define NBT_IMPLEMENTATION
+#include "libnbt/nbt.h"
+
+
 
 #define SEGMENT_BITS 0x7F
 #define CONTINUE_BIT 0x80
+
+
 
 int read_bool(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, uint8_t *out) {
   if (*pos+1 > max)
@@ -27,6 +33,34 @@ int read_byte(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, int8
   (*pos)++;
   *out = *((*packet_buffer)++);
   
+  return 0;
+}
+
+struct buffer_data {
+  uint8_t **packet_buffer;
+  unsigned int *pos;
+  unsigned int max;
+};
+size_t read_nbt_inner(void* userdata, uint8_t* data, size_t size) {
+  struct buffer_data *s_data = userdata;
+  for(int i = 0; i < size; i++) {
+    int error = read_ubyte(s_data->packet_buffer, s_data->pos, s_data->max, &data[i]);;
+    if(error)
+      return i;
+  }
+  return size;
+}
+
+int read_nbt(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, nbt_tag_t **out) {
+  nbt_reader_t reader;
+  struct buffer_data data;
+  data.packet_buffer = packet_buffer;
+  data.pos = pos;
+  data.max = max;
+
+  reader.read = read_nbt_inner;
+  reader.userdata = &data;
+  *out = nbt_parse(reader, 0);
   return 0;
 }
 
@@ -114,7 +148,7 @@ int read_float(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, flo
   return 0;
 }
 
-int read_double(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, int64_t *out) {
+int read_double(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, double *out) {
   if (*pos+8 > max)
     return ERR_TOO_FEW_BYTES;
 
@@ -231,6 +265,29 @@ int write_ubyte(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, ui
   (*pos)++;
   *((*packet_buffer)++) = val;
   
+  return 0;
+}
+
+size_t write_nbt_inner(void* userdata, uint8_t* data, size_t size) {
+  struct buffer_data *s_data = userdata;
+  for(int i = 0; i < size; i++) {
+    int error = write_ubyte(s_data->packet_buffer, s_data->pos, s_data->max, data[i]);;
+    if(error)
+      return i;
+  }
+  return size;
+}
+
+int write_nbt(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, nbt_tag_t *val) {
+  nbt_writer_t writer;
+  struct buffer_data data;
+  data.packet_buffer = packet_buffer;
+  data.pos = pos;
+  data.max = max;
+
+  writer.write = write_nbt_inner;
+  writer.userdata = &data;
+  nbt_write(writer, val, NBT_WRITE_FLAG_USE_RAW, false);
   return 0;
 }
 
@@ -400,6 +457,99 @@ void print_bool(uint8_t val) {
 void print_byte(int8_t val) {
   printf("%d", val);
 };
+void print_nbt_tree(nbt_tag_t* tag, int indentation) {
+  for (int i = 0; i < indentation; i++) {
+    printf(" ");
+  }
+
+  if (tag->name) {
+    printf("%s: ", tag->name);
+  }
+
+  switch (tag->type) {
+    case NBT_TYPE_END: {
+      printf("[end]");
+      break;
+    }
+    case NBT_TYPE_BYTE: {
+      printf("%hhd", tag->tag_byte.value);
+      break;
+    }
+    case NBT_TYPE_SHORT: {
+      printf("%hd", tag->tag_short.value);
+      break;
+    }
+    case NBT_TYPE_INT: {
+      printf("%d", tag->tag_int.value);
+      break;
+    }
+    case NBT_TYPE_LONG: {
+      printf("%ld", tag->tag_long.value);
+      break;
+    }
+    case NBT_TYPE_FLOAT: {
+      printf("%f", tag->tag_float.value);
+      break;
+    }
+    case NBT_TYPE_DOUBLE: {
+      printf("%f", tag->tag_double.value);
+      break;
+    }
+    case NBT_TYPE_BYTE_ARRAY: {
+      printf("[byte array]");
+      break;
+      for (size_t i = 0; i < tag->tag_byte_array.size; i++) {
+        printf("%hhd ", tag->tag_byte_array.value[i]);
+      }
+      break;
+    }
+    case NBT_TYPE_STRING: {
+      printf("%s", tag->tag_string.value);
+      break;
+    }
+    case NBT_TYPE_LIST: {
+      printf("\n");
+      for (size_t i = 0; i < tag->tag_list.size; i++) {
+        print_nbt_tree(tag->tag_list.value[i], indentation + tag->name_size + 2);
+      }
+      break;
+    }
+    case NBT_TYPE_COMPOUND: {
+      printf("\n");
+      for (size_t i = 0; i < tag->tag_compound.size; i++) {
+        print_nbt_tree(tag->tag_compound.value[i], indentation + tag->name_size + 2);
+      }
+      break;
+    }
+    case NBT_TYPE_INT_ARRAY: {
+      printf("[int array]");
+      break;
+      for (size_t i = 0; i < tag->tag_int_array.size; i++) {
+        printf("%d ", tag->tag_int_array.value[i]);
+      }
+      break;
+    }
+    case NBT_TYPE_LONG_ARRAY: {
+      printf("[long array]");
+      break;
+      for (size_t i = 0; i < tag->tag_long_array.size; i++) {
+        printf("%ld ", tag->tag_long_array.value[i]);
+      }
+      break;
+    }
+    default: {
+      printf("[error]");
+    }
+  }
+
+  printf("\n");
+}
+
+void print_nbt(nbt_tag_t *val) {
+  print_nbt_tree(val, 0);
+  //printf("[nbt]");
+}
+
 void print_ubyte(uint8_t val) {
   printf("%hhu", val);
 };

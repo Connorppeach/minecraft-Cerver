@@ -45,7 +45,7 @@
   error = read_bool(packet_buffer, pos, max, &field_name##_error);	\
   if(error) return error;						\
   if(field_name##_error) {						\
-    out->field_name = malloc(sizeof(type));				\
+    out->field_name = malloc(sizeof(field_type));				\
     error = read_##type(packet_buffer, pos, max, out->field_name);	\
     if(error) return error;						\
   } else out->field_name = NULL
@@ -57,7 +57,7 @@
   out->field_name = (field_type*) malloc(out->len_field_name * sizeof(field_type)); \
   field_type *field_name##_ptr = out->field_name;			\
   for (int i = 0; i < out->len_field_name; i++) {			\
-    error = read_##field_type(packet_buffer, pos, max, (field_name##_ptr++)); \
+    error = read_##type(packet_buffer, pos, max, &(field_name##_ptr[i])); \
     if(error) return error;						\
   }									
 #elif defined(PACKET_WRITE_IMPL)
@@ -73,7 +73,8 @@
   if(error) return error;
 
 #define O(type, field_type, field_name)					\
-  if(out.field_name != NULL) {							\
+  if(out.field_name != NULL) {						\
+    write_bool(packet_buffer, pos, max, 1);				\
     error = write_##type(packet_buffer, pos, max, *out.field_name);	\
     if(error) return error;						\
   }
@@ -83,7 +84,7 @@
   error = write_var_int(packet_buffer, pos, max, out.len_field_name);	\
   if (error) return error;						\
   for (int i = 0; i < out.len_field_name; i++) {			\
-    error = write_##field_type(packet_buffer, pos, max, *(out.field_name++)); \
+    error = write_##type(packet_buffer, pos, max, *(out.field_name++)); \
     if(error) return error;						\
   }									
 
@@ -146,9 +147,7 @@
 #define _PACKETS_H_
 #endif
 
-PACKET(NBT,
-       RL(ubyte, uint, data, data_len);
-       );
+
 
 
 
@@ -159,6 +158,7 @@ PACKET(NBT,
 #include "packets/handshake.h"
 #include "packets/login.h"
 #include "packets/configuration.h"
+#include "packets/play.h"
 
 
 
@@ -172,6 +172,5 @@ PACKET(NBT,
 #undef R
 #undef O
 #undef RL
-
 
 

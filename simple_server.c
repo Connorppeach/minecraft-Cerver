@@ -1,90 +1,49 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <netinet/tcp.h> 
-#include <arpa/inet.h>
-#include "rw.h"
-#include "util.h"
-#include "player.h"
-#include "packets.h"
+#include "simple_server.h"
 
 #define PORT 25545   // port we're listening on
+simple_server* allocate_simple_server(int max_players) {
+  simple_server *server = malloc(sizeof(simple_server));
+  server->players = malloc(sizeof(player*)*max_players);
+  server->player_slots = malloc(sizeof(uint8_t)*max_players);
+  server->max_players = max_players;
+  return server;
+}
 
-#define MAX_PLAYERS 10
-player *players[MAX_PLAYERS];
-char player_slots[MAX_PLAYERS] = { 0 };
-fd_set master;
 
 // returns player id
-int allocate_player(int fd) { 
-  for (int i = 0; i < MAX_PLAYERS; i++) {
-    if(player_slots[i] != 1) {
-      players[i] = create_player(fd);
-      player_slots[i] = 1;
+int allocate_player(simple_server *server, int fd) { 
+  for (int i = 0; i < server->max_players; i++) {
+    if(server->player_slots[i] != 1) {
+      server->players[i] = create_player(fd);
+      server->player_slots[i] = 1;
       return i;
     }
   }
   return -1;
 }
-void deallocate_player(int player_id) {
+void deallocate_player(simple_server *server, int player_id) {
   puts("deallocating player");
-  FD_CLR(players[player_id]->conn.fd, &master); // remove from master set
-  free_player(players[player_id]);
-  players[player_id] = NULL;
-  player_slots[player_id] = 0;
+  FD_CLR(server->players[player_id]->conn.fd, &server->master); // remove from master set
+  free_player(server->players[player_id]);
+  server->players[player_id] = NULL;
+  server->player_slots[player_id] = 0;
 }
 
 
 
 
 
-void send_packet(uint8_t *packet_buf, int packet_len, int fd) {
-  uint32_t header_len = vi_size(packet_len);
-  int offset = 4 - header_len;
-  
-  uint8_t *write_ptr = packet_buf + offset;
-  uint32_t bytes_written = 0;
-  write_var_int(&write_ptr, &bytes_written, 4, packet_len);
-  
-  uint8_t *send_ptr = packet_buf + offset;
-  int total_len = header_len + packet_len;
-  
-  int sent = send(fd, send_ptr, total_len, 0);
-  
-  printf("header_len %d, packet_len %d, total_len %d, sent %d\n", 
-         header_len, packet_len, total_len, sent);
-}
 
-void disconnect_player(int player_num) {
-  if (players[player_num]->connection_state == 2) {
-    char disconnect_message[] = "{\"type\": \"text\", \"text\": \"reason here\"}";
-    lstr json = lstr_static(disconnect_message);
-    disconnect_login packet;
-    packet.json = json;
-    // write initial packet
-    uint8_t packet_buf[512];
-    uint32_t max = 0;
-    uint8_t *packet_ptr = packet_buf+4;
-    
-    write_var_int(&packet_ptr, &max, 512, DISCONNECT_LOGIN_ID);
-    write_disconnect_login(&packet_ptr, &max, 512, packet);
-    send_packet(packet_buf, max, players[player_num]->conn.fd);
-  } else
-    deallocate_player(player_num);
-}
+
+
 #define WRITE_BUF_SIZE 1024
-int handle_player_packet(int player_num, uint8_t *packet_buf, unsigned int buf_len) {
+int handle_player_packet(simple_server *server, int player_num, uint8_t *packet_buf, unsigned int buf_len) {
   int packet_type;
   unsigned int pos = 0;
   int error = read_var_int(&packet_buf, &pos, buf_len, &packet_type);
   if(error) {
     printf("error in client: %d\n", error);
-    deallocate_player(player_num);
+    deallocate_player(server, player_num);
     return pos;
   }
   // make a copy of the packet(remember to free if you return)
@@ -100,7 +59,7 @@ int handle_player_packet(int player_num, uint8_t *packet_buf, unsigned int buf_l
 
   
   printf("got packet id %d with len %d\n", packet_type, buf_len);
-  if (players[player_num]->connection_state == 0 && packet_type == HANDSHAKE_ID) {
+  if (server->players[player_num]->connection_state == 0 && packet_type == HANDSHAKE_ID) {
     handshake shake;
     int error = read_handshake(&buf_ptr, &pos, buf_len, &shake);
     print_handshake(shake);
@@ -108,13 +67,13 @@ int handle_player_packet(int player_num, uint8_t *packet_buf, unsigned int buf_l
     // we dont handle anything other than login right now
     if (shake.intent != 2) {
       printf("error: %d\n", error);
-      deallocate_player(player_num);
+      deallocate_player(server, player_num);
       free(raw_data);
       return pos;
     }
     
-    players[player_num]->connection_state = shake.intent;
-  } else if (players[player_num]->connection_state == 2) {
+    server->players[player_num]->connection_state = shake.intent;
+  } else if (server->players[player_num]->connection_state == 2) {
     if (packet_type == LOGIN_START_ID) {
       login_start login_s;
       read_login_start(&buf_ptr, &pos, buf_len, &login_s);
@@ -129,20 +88,20 @@ int handle_player_packet(int player_num, uint8_t *packet_buf, unsigned int buf_l
       // you may pass
       write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, LOGIN_SUCCESS_ID);
       write_login_success(&packet_ptr, &max, WRITE_BUF_SIZE, (login_success){{login_s.uuid, login_s.name, NULL, 0}});
-      send_packet(write_buf, max, players[player_num]->conn.fd);
+      send_packet(write_buf, max, server->players[player_num]->conn.fd);
       
     } else if (packet_type == LOGIN_ACKNOWLEDGED_ID) {
       puts("\nlogin finish\n");
-      players[player_num]->connection_state = 3;
+      server->players[player_num]->connection_state = 3;
       uint8_t *packet_ptr = write_buf+4;
       write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, CLIENTBOUND_KNOWN_PACKS_ID);
       known_pack packs[] = { (known_pack){lstr_static("minecraft"), lstr_static("core"), lstr_static("1.21.8")} };
       write_clientbound_known_packs(&packet_ptr, &max, WRITE_BUF_SIZE, (clientbound_known_packs){packs, 1});
       print_clientbound_known_packs((clientbound_known_packs){packs, 1});
-      send_packet(write_buf, max, players[player_num]->conn.fd);
+      send_packet(write_buf, max, server->players[player_num]->conn.fd);
       // send moar
     } 
-  } else if (players[player_num]->connection_state == 3) {
+  } else if (server->players[player_num]->connection_state == 3) {
     if (packet_type == CLIENT_INFORMATION_CONFIGURATION_ID) {
       puts("\nplayer enter config\n");
       //
@@ -168,7 +127,7 @@ int handle_player_packet(int player_num, uint8_t *packet_buf, unsigned int buf_l
 	write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, REGISTRY_DATA_ID);
 	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIZE, reg_packet);
 	print_registry_data(reg_packet);
-	send_packet(write_buf, max, players[player_num]->conn.fd);
+	send_packet(write_buf, max, server->players[player_num]->conn.fd);
       }
       {
 	packet_ptr = write_buf+4;
@@ -178,7 +137,7 @@ int handle_player_packet(int player_num, uint8_t *packet_buf, unsigned int buf_l
 	write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, REGISTRY_DATA_ID);
 	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIZE, reg_packet);
 	print_registry_data(reg_packet);
-	send_packet(write_buf, max, players[player_num]->conn.fd);
+	send_packet(write_buf, max, server->players[player_num]->conn.fd);
       }
       char damage_types_str[][32] = { "minecraft:cactus", "minecraft:campfire", "minecraft:cramming", "minecraft:dragon_breath", "minecraft:drown", "minecraft:dry_out", "minecraft:ender_pearl", "minecraft:fall", "minecraft:fly_into_wall", "minecraft:freeze", "minecraft:generic", "minecraft:generic_kill", "minecraft:hot_floor", "minecraft:in_fire", "minecraft:in_wall", "minecraft:lava", "minecraft:lightning_bolt", "minecraft:magic", "minecraft:on_fire", "minecraft:out_of_world", "minecraft:outside_border", "minecraft:stalagmite", "minecraft:starve", "minecraft:sweet_berry_bush", "minecraft:wither"}; 
       for (int i = 0; i < sizeof(damage_types_str) / sizeof(damage_types_str[0]); i++)
@@ -210,7 +169,7 @@ int handle_player_packet(int player_num, uint8_t *packet_buf, unsigned int buf_l
 	print_registry_data(reg_packet);
 	nbt_free_tag(cactus_damage);
 	
-	send_packet(write_buf, max, players[player_num]->conn.fd);
+	send_packet(write_buf, max, server->players[player_num]->conn.fd);
       }
       {
 	packet_ptr = write_buf+4;
@@ -222,7 +181,7 @@ int handle_player_packet(int player_num, uint8_t *packet_buf, unsigned int buf_l
 	write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, REGISTRY_DATA_ID);
 	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIZE, reg_packet);
 	print_registry_data(reg_packet);
-	send_packet(write_buf, max, players[player_num]->conn.fd);
+	send_packet(write_buf, max, server->players[player_num]->conn.fd);
       }
       {
 	packet_ptr = write_buf+4;
@@ -329,7 +288,7 @@ int handle_player_packet(int player_num, uint8_t *packet_buf, unsigned int buf_l
 	print_registry_data(reg_packet);
 	nbt_free_tag(overworld);
 	
-	send_packet(write_buf, max, players[player_num]->conn.fd);
+	send_packet(write_buf, max, server->players[player_num]->conn.fd);
       }
       {
 	packet_ptr = write_buf+4;
@@ -341,7 +300,7 @@ int handle_player_packet(int player_num, uint8_t *packet_buf, unsigned int buf_l
 	write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, REGISTRY_DATA_ID);
 	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIZE, reg_packet);
 	print_registry_data(reg_packet);
-	send_packet(write_buf, max, players[player_num]->conn.fd);
+	send_packet(write_buf, max, server->players[player_num]->conn.fd);
       }
       {
 	packet_ptr = write_buf+4;
@@ -353,7 +312,7 @@ int handle_player_packet(int player_num, uint8_t *packet_buf, unsigned int buf_l
 	write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, REGISTRY_DATA_ID);
 	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIZE, reg_packet);
 	print_registry_data(reg_packet);
-	send_packet(write_buf, max, players[player_num]->conn.fd);
+	send_packet(write_buf, max, server->players[player_num]->conn.fd);
       }      
       {
 	packet_ptr = write_buf+4;
@@ -365,7 +324,7 @@ int handle_player_packet(int player_num, uint8_t *packet_buf, unsigned int buf_l
 	write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, REGISTRY_DATA_ID);
 	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIZE, reg_packet);
 	print_registry_data(reg_packet);
-	send_packet(write_buf, max, players[player_num]->conn.fd);
+	send_packet(write_buf, max, server->players[player_num]->conn.fd);
       }
       {
 	packet_ptr = write_buf+4;
@@ -410,7 +369,7 @@ int handle_player_packet(int player_num, uint8_t *packet_buf, unsigned int buf_l
 	print_registry_data(reg_packet);
 	nbt_free_tag(overworld);
 	
-	send_packet(write_buf, max, players[player_num]->conn.fd);
+	send_packet(write_buf, max, server->players[player_num]->conn.fd);
       }
       {
 	packet_ptr = write_buf+4;
@@ -422,7 +381,7 @@ int handle_player_packet(int player_num, uint8_t *packet_buf, unsigned int buf_l
 	write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, REGISTRY_DATA_ID);
 	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIZE, reg_packet);
 	print_registry_data(reg_packet);
-	send_packet(write_buf, max, players[player_num]->conn.fd);
+	send_packet(write_buf, max, server->players[player_num]->conn.fd);
       }
       {
 	packet_ptr = write_buf+4;
@@ -434,7 +393,7 @@ int handle_player_packet(int player_num, uint8_t *packet_buf, unsigned int buf_l
 	write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, REGISTRY_DATA_ID);
 	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIZE, reg_packet);
 	print_registry_data(reg_packet);
-	send_packet(write_buf, max, players[player_num]->conn.fd);
+	send_packet(write_buf, max, server->players[player_num]->conn.fd);
       }
       {
 	packet_ptr = write_buf+4;
@@ -446,7 +405,7 @@ int handle_player_packet(int player_num, uint8_t *packet_buf, unsigned int buf_l
 	write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, REGISTRY_DATA_ID);
 	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIZE, reg_packet);
 	print_registry_data(reg_packet);
-	send_packet(write_buf, max, players[player_num]->conn.fd);
+	send_packet(write_buf, max, server->players[player_num]->conn.fd);
       }
       {
 	packet_ptr = write_buf+4;
@@ -458,7 +417,7 @@ int handle_player_packet(int player_num, uint8_t *packet_buf, unsigned int buf_l
 	write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, REGISTRY_DATA_ID);
 	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIZE, reg_packet);
 	print_registry_data(reg_packet);
-	send_packet(write_buf, max, players[player_num]->conn.fd);
+	send_packet(write_buf, max, server->players[player_num]->conn.fd);
       }
       {
 	packet_ptr = write_buf+4;
@@ -515,7 +474,7 @@ int handle_player_packet(int player_num, uint8_t *packet_buf, unsigned int buf_l
 	print_registry_data(reg_packet);
 	nbt_free_tag(overworld);
 	
-	send_packet(write_buf, max, players[player_num]->conn.fd);
+	send_packet(write_buf, max, server->players[player_num]->conn.fd);
       }
       {
 	packet_ptr = write_buf+4;
@@ -539,7 +498,7 @@ int handle_player_packet(int player_num, uint8_t *packet_buf, unsigned int buf_l
 	print_registry_data(reg_packet);
 	nbt_free_tag(overworld);
 	
-	send_packet(write_buf, max, players[player_num]->conn.fd);
+	send_packet(write_buf, max, server->players[player_num]->conn.fd);
       }
       {
 	packet_ptr = write_buf+4;
@@ -567,7 +526,7 @@ int handle_player_packet(int player_num, uint8_t *packet_buf, unsigned int buf_l
 	print_registry_data(reg_packet);
 	nbt_free_tag(overworld);
 	
-	send_packet(write_buf, max, players[player_num]->conn.fd);
+	send_packet(write_buf, max, server->players[player_num]->conn.fd);
       }
       {
 	packet_ptr = write_buf+4;
@@ -595,7 +554,7 @@ int handle_player_packet(int player_num, uint8_t *packet_buf, unsigned int buf_l
 	print_registry_data(reg_packet);
 	nbt_free_tag(overworld);
 	
-	send_packet(write_buf, max, players[player_num]->conn.fd);
+	send_packet(write_buf, max, server->players[player_num]->conn.fd);
       }
       {
 	packet_ptr = write_buf+4;
@@ -619,7 +578,7 @@ int handle_player_packet(int player_num, uint8_t *packet_buf, unsigned int buf_l
 	print_registry_data(reg_packet);
 	nbt_free_tag(overworld);
 	
-	send_packet(write_buf, max, players[player_num]->conn.fd);
+	send_packet(write_buf, max, server->players[player_num]->conn.fd);
       }
       {
 	packet_ptr = write_buf+4;
@@ -647,7 +606,7 @@ int handle_player_packet(int player_num, uint8_t *packet_buf, unsigned int buf_l
 	print_registry_data(reg_packet);
 	nbt_free_tag(overworld);
 	
-	send_packet(write_buf, max, players[player_num]->conn.fd);
+	send_packet(write_buf, max, server->players[player_num]->conn.fd);
       }
       {
 	packet_ptr = write_buf+4;
@@ -683,7 +642,7 @@ int handle_player_packet(int player_num, uint8_t *packet_buf, unsigned int buf_l
 	print_registry_data(reg_packet);
 	nbt_free_tag(overworld_root);
 	
-	send_packet(write_buf, max, players[player_num]->conn.fd);
+	send_packet(write_buf, max, server->players[player_num]->conn.fd);
       }
       {
 	packet_ptr = write_buf+4;
@@ -728,7 +687,7 @@ int handle_player_packet(int player_num, uint8_t *packet_buf, unsigned int buf_l
 	print_registry_data(reg_packet);
 	nbt_free_tag(overworld);
 	
-	send_packet(write_buf, max, players[player_num]->conn.fd);
+	send_packet(write_buf, max, server->players[player_num]->conn.fd);
       }
 
       {// finish configuration
@@ -737,11 +696,11 @@ int handle_player_packet(int player_num, uint8_t *packet_buf, unsigned int buf_l
 	write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, FINISH_CONFIGURATION_ID);
 	finish_configuration config;
 	write_finish_configuration(&packet_ptr, &max, WRITE_BUF_SIZE, config);
-	send_packet(write_buf, max, players[player_num]->conn.fd);
+	send_packet(write_buf, max, server->players[player_num]->conn.fd);
       }      
     } else if (packet_type == ACKGNOWLEDGE_SERVER_CONFIGURATION_ID) {
       puts("\nconfiguration finished\n");
-      players[player_num]->connection_state = 4; // yippee, play state
+      server->players[player_num]->connection_state = 4; // yippee, play state
       login_play play;
       play.eid = 0;
       play.is_hardcore = 0;
@@ -769,7 +728,7 @@ int handle_player_packet(int player_num, uint8_t *packet_buf, unsigned int buf_l
       uint8_t *packet_ptr = write_buf+4;
       write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, LOGIN_PLAY_ID);
       write_login_play(&packet_ptr, &max, WRITE_BUF_SIZE, play);
-      send_packet(write_buf, max, players[player_num]->conn.fd);
+      send_packet(write_buf, max, server->players[player_num]->conn.fd);
 
 
       packet_ptr = write_buf+4;
@@ -787,16 +746,16 @@ int handle_player_packet(int player_num, uint8_t *packet_buf, unsigned int buf_l
       packet.flags = 0;
       write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, SYNCRONIZE_PLAYER_POSITION_ID);
       write_syncronize_player_position(&packet_ptr, &max, WRITE_BUF_SIZE, packet);
-      send_packet(write_buf, max, players[player_num]->conn.fd);
+      send_packet(write_buf, max, server->players[player_num]->conn.fd);
     }
-  } else if  (players[player_num]->connection_state == 4) { // play
+  } else if  (server->players[player_num]->connection_state == 4) { // play
     if(packet_type != 0x1B) {
       clientbound_keep_alive alive;
       alive.id = 1;
       uint8_t *packet_ptr = write_buf+4;
       write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, CLIENTBOUND_KEEP_ALIVE_PLAY_ID);
       write_clientbound_keep_alive(&packet_ptr, &max, WRITE_BUF_SIZE, alive);
-      send_packet(write_buf, max, players[player_num]->conn.fd);
+      send_packet(write_buf, max, server->players[player_num]->conn.fd);
 
       
       
@@ -809,7 +768,7 @@ int handle_player_packet(int player_num, uint8_t *packet_buf, unsigned int buf_l
   return pos;
 }
 
-void handle_packet(int player_num, uint8_t *buf, int nbytes) {
+void handle_packet(simple_server *server, int player_num, uint8_t *buf, int nbytes) {
   uint8_t *read_buf = buf;
   uint32_t pos = 0;
   int packet_len;
@@ -817,7 +776,7 @@ void handle_packet(int player_num, uint8_t *buf, int nbytes) {
   int error = read_var_int(&read_buf, &pos, nbytes, &packet_len);
   if (error) {
     printf("error: %d\n", error); // todo -- append to backlog
-    deallocate_player(player_num);
+    deallocate_player(server, player_num);
     return;
   }
   uint32_t remaining_data = nbytes-(read_buf - buf); 
@@ -826,26 +785,26 @@ void handle_packet(int player_num, uint8_t *buf, int nbytes) {
   if (remaining_data < packet_len) {
     printf("error: too little data supplied\ndata remaining after read: %d\n", remaining_data);// todo -- append to backlog
     printf("data needed to read more: %d\n", packet_len);
-    deallocate_player(player_num);
+    deallocate_player(server, player_num);
     return;
   }
   int left = nbytes-packet_len-1;
   uint8_t more = left!=0;
   uint8_t *left_off = read_buf+packet_len;
-  int read_bytes = handle_player_packet(player_num, read_buf, packet_len);
+  int read_bytes = handle_player_packet(server, player_num, read_buf, packet_len);
   printf("read %d\nleft %d\n\n", read_bytes, left);
   if (more) {
     /* printf("error: too much data supplied\ndata left: %d\n", remaining_data); */
     /* printf("data we haves len: %d\n", packet_len); */
     /* deallocate_player(player_num) */;
     printf("more\n");
-    handle_packet(player_num, left_off, left);
+    handle_packet(server, player_num, left_off, left);
     return;
   }
 }
 
 
-int main(void)
+int start_server(simple_server *server, int port)
 {
        // master file descriptor list
     fd_set read_fds; // temp file descriptor list for select()
@@ -860,7 +819,7 @@ int main(void)
     socklen_t addrlen;
     int i;
 
-    FD_ZERO(&master);    // clear the master and temp sets
+    FD_ZERO(&server->master);    // clear the master and temp sets
     FD_ZERO(&read_fds);
 
     // get the listener
@@ -893,14 +852,14 @@ int main(void)
     }
 
     // add the listener to the master set
-    FD_SET(listener, &master);
+    FD_SET(listener, &server->master);
 
     // keep track of the biggest file descriptor
     fdmax = listener; // so far, it's this one
     
     // main loop
     for(;;) {
-        read_fds = master; // copy it
+        read_fds = server->master; // copy it
 	puts("waiting");
         if (select(fdmax+1, &read_fds, NULL, NULL, NULL) == -1) {
             perror("select");
@@ -940,8 +899,8 @@ int main(void)
 
 
 
-			FD_SET(newfd, &master); // add to master set
-			allocate_player(newfd);
+			FD_SET(newfd, &server->master); // add to master set
+			allocate_player(server, newfd);
 
 
 			if (newfd > fdmax) {    // keep track of the maximum
@@ -954,8 +913,8 @@ int main(void)
                     }
                 } else {
 		  int player_num = -1;
-		  for (int k = 0; k < MAX_PLAYERS; k++) {
-		    if (player_slots[k] && players[k]->conn.fd == i) {
+		  for (int k = 0; k < server->max_players; k++) {
+		    if (server->player_slots[k] && server->players[k]->conn.fd == i) {
 		      player_num = k;
 		    }
 		  }
@@ -971,13 +930,13 @@ int main(void)
 		    } else {
 		      perror("recv");
 		    }
-		    deallocate_player(player_num);
-		    FD_CLR(i, &master); // remove from master set
+		    deallocate_player(server, player_num);
+		    FD_CLR(i, &server->master); // remove from master set
 		    
 		  } else {
 		    // we got some data from a client
 		    
-		    handle_packet(player_num, buf, nbytes);
+		    handle_packet(server, player_num, buf, nbytes);
 		  }
                 }
             }
