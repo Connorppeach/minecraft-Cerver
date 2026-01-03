@@ -1,3 +1,4 @@
+#include <math.h>
 #define BUNDLE_DELIMETER_ID 0
 #define SPAWN_ENTITY_ID (BUNDLE_DELIMETER_ID+1)
 #define ENTITY_ANIMATION_ID (SPAWN_ENTITY_ID+1)
@@ -71,6 +72,21 @@
 #define REMOVE_ENTITIES_ID (RECIPE_SETTINGS_ID+1)
 #define REMOVE_ENTITY_EFFECT_ID (REMOVE_ENTITIES_ID+1)
 #define RESET_SCORE_ID (REMOVE_ENTITY_EFFECT_ID+1)
+#define REMOVE_RESOURCE_PACK_ID (RESET_SCORE_ID+1)
+#define ADD_RESOURCE_PACK_ID (REMOVE_RESOURCE_PACK_ID+1)
+#define RESPAWN_ID (ADD_RESOURCE_PACK_ID+1)
+#define SET_HEAD_ROTATION_ID (RESPAWN_ID+1)
+#define UPDATE_SECTION_BLOCKS_ID (SET_HEAD_ROTATION_ID+1)
+#define SELECT_ADVANCEMENTS_TAB_ID (UPDATE_SECTION_BLOCKS_ID+1)
+#define SERVER_DATA_ID (SELECT_ADVANCEMENTS_TAB_ID+1)
+#define SET_ACTION_BAR_TEXT_ID (SERVER_DATA_ID+1)
+#define SET_BORDER_CENTER_ID (SET_ACTION_BAR_TEXT_ID+1)
+#define SET_BORDER_LERP_SIZE_ID (SET_BORDER_CENTER_ID+1)
+#define SET_BORDER_SIZE_ID (SET_BORDER_LERP_SIZE_ID+1)
+#define SET_BORDER_WARNING_DELAY_ID (SET_BORDER_SIZE_ID+1)
+#define SET_BORDER_WARNING_DISTANCE_ID (SET_BORDER_WARNING_DELAY_ID+1)
+#define SET_CAMERA_ID (SET_BORDER_WARNING_DISTANCE_ID+1)
+#define SET_CENTER_CHUNK_ID (SET_CAMERA_ID+1)
 
 
 
@@ -118,4 +134,85 @@ PACKET(syncronize_player_position,
 PACKET(game_event,
        R(ubyte, uint8_t, event_id);
        R(float, float, value);
+       );
+
+PACKET(set_center_chunk,
+       R(var_int, int32_t, x);
+       R(var_int, int32_t, y);
+       );
+
+PACKET(heightmap,
+       R(var_int, int32_t, type);
+       RL(long, int64_t, data, data_count);
+       );
+PACKET(chunk_block_entity,
+       R(ubyte, uint8_t, packed_xz);
+       R(short, int16_t, y);
+       R(var_int, int32_t, type);
+       O(network_nbt, nbt_tag_t*, data);
+       );
+
+
+PACKET(paletted_container,
+       R(ubyte, uint8_t, bits_per_entry);
+#if defined(PACKET_READ_IMPL)
+       // todo -- read
+#elif defined(PACKET_WRITE_IMPL)
+       // todo -- more than single valued palettes
+       if (out.format == 0) {
+	 write_var_int(packet_buffer, pos, max, out.value);	
+       } else if (out.format == 2) { // direct
+	 int number_of_entries = 4096;
+	 int entries_per_long = floor((float)64 / out.bits_per_entry);
+	 int number_of_longs = ceil((float)number_of_entries / entries_per_long);
+
+	 uint64_t entry_mask = ((uint64_t)1 << out.bits_per_entry) - 1;
+	 
+	 uint64_t data[4096];
+	 for(int i = 0; i < number_of_longs; i++) data[i] = 0;
+	 for(int i = 0; i < number_of_entries; i++) {
+	   int long_index = i / entries_per_long;
+	   int bit_index = i % entries_per_long * out.bits_per_entry;
+
+	   //printf("%d\n", long_index);
+	   data[long_index] &= ~(entry_mask << bit_index);
+	   // if value has a smaller integer type, it may again be necessary to cast it to 64 bits.
+	   data[long_index] |= (uint64_t)out.data[i] << bit_index;
+	 }
+	 
+	 for(int i = 0; i < number_of_longs; i++) {
+	   error = write_long(packet_buffer, pos, max, data[i]);
+	   if(error)
+	     return error;
+	 }
+	 
+
+       }
+       
+#elif defined(PACKET_PRINT_IMPL)
+       // todo -- print
+#else
+       int32_t data[4096];  // only does stuff in format 1 and 2
+       int32_t value; // only does stuff in format 0
+       int32_t palette_length; // only does stuff in format 1
+       uint8_t format; // only does stuff in format 1
+#endif
+       );
+PACKET(chunk_section,
+       R(short, int16_t, block_count);
+       R(paletted_container, paletted_container, block_states);
+       R(paletted_container, paletted_container, biomes);
+       );
+PACKET(chunk_data_and_update_light,
+       R(int, int32_t, x);
+       R(int, int32_t, y);
+       RL(heightmap, heightmap, heightmaps, heightmap_count);
+       RL(ubyte, uint8_t, data, data_len);
+       RL(chunk_block_entity, chunk_block_entity, block_entities, block_entities_count);
+       R(var_int, int32_t, o1);
+       R(var_int, int32_t, o2);
+       R(var_int, int32_t, o3);
+       R(var_int, int32_t, o4);
+       R(var_int, int32_t, o5);
+       R(var_int, int32_t, o6);
        );

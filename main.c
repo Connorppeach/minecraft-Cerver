@@ -1,989 +1,207 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <netinet/tcp.h> 
-#include <arpa/inet.h>
 #include "rw.h"
 #include "util.h"
 #include "player.h"
 #include "packets.h"
+#include "simple_server.h"
+#define STB_PERLIN_IMPLEMENTATION
+#include "stb_perlin.h"
 
 #define PORT 25545   // port we're listening on
 
 #define MAX_PLAYERS 10
-player *players[MAX_PLAYERS];
-char player_slots[MAX_PLAYERS] = { 0 };
-fd_set master;
+#define WRITE_BUF_SIZE 1310720
 
-// returns player id
-int allocate_player(int fd) { 
-  for (int i = 0; i < MAX_PLAYERS; i++) {
-    if(player_slots[i] != 1) {
-      players[i] = create_player(fd);
-      player_slots[i] = 1;
-      return i;
-    }
-  }
-  return -1;
-}
-void deallocate_player(int player_id) {
-  puts("deallocating player");
-  FD_CLR(players[player_id]->conn.fd, &master); // remove from master set
-  free_player(players[player_id]);
-  players[player_id] = NULL;
-  player_slots[player_id] = 0;
+uint8_t write_buf[WRITE_BUF_SIZE];
+int total_ticks = 0;
+int y = 0;
+void handle_packet_cb(simple_server *server, int player_num, int packet_type, uint8_t *packet_buf, unsigned int buf_len) {
+  //printf("got packet %d\n", packet_type);
 }
 
+void teleport_player(simple_server *server, int player_num, double x, double y, double z) {
+  syncronize_player_position packet;
+  packet.teleport_id = 10;
+  packet.x = x;
+  packet.y = y;
+  packet.z = z;
+  packet.velocity_x = 0.0;
+  packet.velocity_y = 0.0;
+  packet.velocity_z = 0.0;
+  packet.yaw = 0.0;
+  packet.pitch = 0.0;
+  packet.flags = 0;
 
-
-
-
-void send_packet(uint8_t *packet_buf, int packet_len, int fd) {
-  uint32_t header_len = vi_size(packet_len);
-  int offset = 4 - header_len;
-  
-  uint8_t *write_ptr = packet_buf + offset;
-  uint32_t bytes_written = 0;
-  write_var_int(&write_ptr, &bytes_written, 4, packet_len);
-  
-  uint8_t *send_ptr = packet_buf + offset;
-  int total_len = header_len + packet_len;
-  
-  int sent = send(fd, send_ptr, total_len, 0);
-  
-  printf("header_len %d, packet_len %d, total_len %d, sent %d\n", 
-         header_len, packet_len, total_len, sent);
-}
-
-void disconnect_player(int player_num) {
-  if (players[player_num]->connection_state == 2) {
-    char disconnect_message[] = "{\"type\": \"text\", \"text\": \"reason here\"}";
-    lstr json = lstr_static(disconnect_message);
-    disconnect_login packet;
-    packet.json = json;
-    // write initial packet
-    uint8_t packet_buf[512];
-    uint32_t max = 0;
-    uint8_t *packet_ptr = packet_buf+4;
-    
-    write_var_int(&packet_ptr, &max, 512, DISCONNECT_LOGIN_ID);
-    write_disconnect_login(&packet_ptr, &max, 512, packet);
-    send_packet(packet_buf, max, players[player_num]->conn.fd);
-  } else
-    deallocate_player(player_num);
-}
-#define WRITE_BUF_SIZE 1024
-int handle_player_packet(int player_num, uint8_t *packet_buf, unsigned int buf_len) {
-  int packet_type;
-  unsigned int pos = 0;
-  int error = read_var_int(&packet_buf, &pos, buf_len, &packet_type);
-  if(error) {
-    printf("error in client: %d\n", error);
-    deallocate_player(player_num);
-    return pos;
-  }
-  // make a copy of the packet(remember to free if you return)
-  uint8_t *raw_data = malloc(buf_len*sizeof(uint8_t));
-  uint8_t *buf_ptr = raw_data;
-  for(int i = 0; i < buf_len; i++)
-    raw_data[i] = packet_buf[i];
-
-
-  // util write packet buffer
-  uint8_t write_buf[WRITE_BUF_SIZE];
+  uint8_t *packet_ptr = write_buf+4;
   uint32_t max = 0;
-
-  
-  printf("got packet id %d with len %d\n", packet_type, buf_len);
-  if (players[player_num]->connection_state == 0 && packet_type == HANDSHAKE_ID) {
-    handshake shake;
-    int error = read_handshake(&buf_ptr, &pos, buf_len, &shake);
-    print_handshake(shake);
-
-    // we dont handle anything other than login right now
-    if (shake.intent != 2) {
-      printf("error: %d\n", error);
-      deallocate_player(player_num);
-      free(raw_data);
-      return pos;
-    }
-    
-    players[player_num]->connection_state = shake.intent;
-  } else if (players[player_num]->connection_state == 2) {
-    if (packet_type == LOGIN_START_ID) {
-      login_start login_s;
-      read_login_start(&buf_ptr, &pos, buf_len, &login_s);
-      print_login_start(login_s);
-      
-      puts("\nplayer login\n");
-      uint8_t *packet_ptr = write_buf+4;
-
-      // you shall not pass
-      //disconnect_player(player_num);
-
-      // you may pass
-      write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, LOGIN_SUCCESS_ID);
-      write_login_success(&packet_ptr, &max, WRITE_BUF_SIZE, (login_success){{login_s.uuid, login_s.name, NULL, 0}});
-      send_packet(write_buf, max, players[player_num]->conn.fd);
-      
-    } else if (packet_type == LOGIN_ACKNOWLEDGED_ID) {
-      puts("\nlogin finish\n");
-      players[player_num]->connection_state = 3;
-      uint8_t *packet_ptr = write_buf+4;
-      write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, CLIENTBOUND_KNOWN_PACKS_ID);
-      known_pack packs[] = { (known_pack){lstr_static("minecraft"), lstr_static("core"), lstr_static("1.21.8")} };
-      write_clientbound_known_packs(&packet_ptr, &max, WRITE_BUF_SIZE, (clientbound_known_packs){packs, 1});
-      print_clientbound_known_packs((clientbound_known_packs){packs, 1});
-      send_packet(write_buf, max, players[player_num]->conn.fd);
-      // send moar
-    } 
-  } else if (players[player_num]->connection_state == 3) {
-    if (packet_type == CLIENT_INFORMATION_CONFIGURATION_ID) {
-      puts("\nplayer enter config\n");
-      //
-      client_information_configuration config_s;
-      read_client_information_configuration(&buf_ptr, &pos, buf_len, &config_s);
-      print_client_information_configuration(config_s);
-      // send our known packs
-      
-    } else if (packet_type == SERVERBOUND_KNOWN_PACKS_CONFIGURATION_ID) {
-      serverbound_known_packs config_s;
-      read_serverbound_known_packs(&buf_ptr, &pos, buf_len, &config_s);
-      print_serverbound_known_packs(config_s);
-      registry_data reg_packet;
-      uint8_t *packet_ptr;
-      // send emtpy registries
-      {
-	packet_ptr = write_buf+4;
-	max = 0;
-	reg_packet.registry_id = lstr_static("minecraft:banner_pattern");
-	reg_packet.entries = NULL;
-	reg_packet.num_entries = 0;
-
-	write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, REGISTRY_DATA_ID);
-	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIZE, reg_packet);
-	print_registry_data(reg_packet);
-	send_packet(write_buf, max, players[player_num]->conn.fd);
-      }
-      {
-	packet_ptr = write_buf+4;
-	max = 0;
-	reg_packet.registry_id = lstr_static("minecraft:chat_type");
-
-	write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, REGISTRY_DATA_ID);
-	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIZE, reg_packet);
-	print_registry_data(reg_packet);
-	send_packet(write_buf, max, players[player_num]->conn.fd);
-      }
-      char damage_types_str[][32] = { "minecraft:cactus", "minecraft:campfire", "minecraft:cramming", "minecraft:dragon_breath", "minecraft:drown", "minecraft:dry_out", "minecraft:ender_pearl", "minecraft:fall", "minecraft:fly_into_wall", "minecraft:freeze", "minecraft:generic", "minecraft:generic_kill", "minecraft:hot_floor", "minecraft:in_fire", "minecraft:in_wall", "minecraft:lava", "minecraft:lightning_bolt", "minecraft:magic", "minecraft:on_fire", "minecraft:out_of_world", "minecraft:outside_border", "minecraft:stalagmite", "minecraft:starve", "minecraft:sweet_berry_bush", "minecraft:wither"}; 
-      for (int i = 0; i < sizeof(damage_types_str) / sizeof(damage_types_str[0]); i++)
-	{
-	  packet_ptr = write_buf+4;
-	  max = 0;
-	  reg_packet.registry_id = lstr_static("minecraft:damage_type");
-	  /* reg_packet.entries = NULL; */
-	  /* reg_packet.num_entries = 0; */
-	  nbt_tag_t* cactus_damage = nbt_new_tag_compound();
-	  nbt_tag_t* message_id = nbt_new_tag_string(damage_types_str[i], strlen(damage_types_str[i]));
-	  nbt_tag_t* scaling = nbt_new_tag_string("never", strlen("never"));
-	  nbt_tag_t* exhaustion = nbt_new_tag_float(0.0);
-	  nbt_set_tag_name(message_id, "message_id", strlen("message_id"));
-	  nbt_set_tag_name(scaling, "scaling", strlen("scaling"));
-	  nbt_set_tag_name(exhaustion, "exhaustion", strlen("exhaustion"));
-	  
-	  nbt_tag_compound_append(cactus_damage, scaling);
-	  nbt_tag_compound_append(cactus_damage, message_id);
-	  nbt_tag_compound_append(cactus_damage, exhaustion);
-	
-	
-	registry_data_entry damage_types[] = { { lstr_static(damage_types_str[i]), &cactus_damage } };
-	reg_packet.entries = damage_types;
-	reg_packet.num_entries = sizeof(damage_types) / sizeof(damage_types[0]);
-
-	write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, REGISTRY_DATA_ID);
-	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIZE, reg_packet);
-	print_registry_data(reg_packet);
-	nbt_free_tag(cactus_damage);
-	
-	send_packet(write_buf, max, players[player_num]->conn.fd);
-      }
-      {
-	packet_ptr = write_buf+4;
-	max = 0;
-	reg_packet.registry_id = lstr_static("minecraft:dialog");
-	reg_packet.entries = NULL;
-	reg_packet.num_entries = 0;
-
-	write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, REGISTRY_DATA_ID);
-	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIZE, reg_packet);
-	print_registry_data(reg_packet);
-	send_packet(write_buf, max, players[player_num]->conn.fd);
-      }
-      {
-	packet_ptr = write_buf+4;
-	max = 0;
-	reg_packet.registry_id = lstr_static("minecraft:dimension_type");
-	/* reg_packet.entries = NULL; */
-	/* reg_packet.num_entries = 0; */
-	nbt_tag_t* overworld = nbt_new_tag_compound();
-	{
-	  nbt_tag_t* coordinate_scale = nbt_new_tag_float(1.0);
-	  nbt_set_tag_name(coordinate_scale, "coordinate_scale", strlen("coordinate_scale"));
-	  nbt_tag_compound_append(overworld, coordinate_scale);
-
-	  nbt_tag_t* has_skylight = nbt_new_tag_byte(false);
-	  nbt_set_tag_name(has_skylight, "has_skylight", strlen("has_skylight"));
-	  nbt_tag_compound_append(overworld, has_skylight);
-
-	  nbt_tag_t* has_ceiling = nbt_new_tag_byte(false);
-	  nbt_set_tag_name(has_ceiling, "has_ceiling", strlen("has_ceiling"));
-	  nbt_tag_compound_append(overworld, has_ceiling);
-
-	  nbt_tag_t* has_fixed_time = nbt_new_tag_byte(false);
-	  nbt_set_tag_name(has_fixed_time, "has_fixed_time", strlen("has_fixed_time"));
-	  nbt_tag_compound_append(overworld, has_fixed_time);
-
-	  // todo -- move to enviromental flags for .11
-	  
-	  nbt_tag_t* piglin_safe = nbt_new_tag_byte(false);
-	  nbt_set_tag_name(piglin_safe, "piglin_safe", strlen("piglin_safe"));
-	  nbt_tag_compound_append(overworld, piglin_safe);
-
-	  nbt_tag_t* has_raids = nbt_new_tag_byte(false);
-	  nbt_set_tag_name(has_raids, "has_raids", strlen("has_raids"));
-	  nbt_tag_compound_append(overworld, has_raids);
-
-	  nbt_tag_t* respawn_anchor_works = nbt_new_tag_byte(false);
-	  nbt_set_tag_name(respawn_anchor_works, "respawn_anchor_works", strlen("respawn_anchor_works"));
-	  nbt_tag_compound_append(overworld, respawn_anchor_works);
-
-	  nbt_tag_t* bed_works = nbt_new_tag_byte(false);
-	  nbt_set_tag_name(bed_works, "bed_works", strlen("bed_works"));
-	  nbt_tag_compound_append(overworld, bed_works);
-
-	  nbt_tag_t* ultrawarm = nbt_new_tag_byte(false);
-	  nbt_set_tag_name(ultrawarm, "ultrawarm", strlen("ultrawarm"));
-	  nbt_tag_compound_append(overworld, ultrawarm);
-
-	  nbt_tag_t* natural = nbt_new_tag_byte(false);
-	  nbt_set_tag_name(natural, "natural", strlen("natural"));
-	  nbt_tag_compound_append(overworld, natural);
-	  
-	  
-	  nbt_tag_t* cloud_height = nbt_new_tag_int(10);
-	  nbt_set_tag_name(cloud_height, "cloud_height", strlen("cloud_height"));
-	  nbt_tag_compound_append(overworld, cloud_height);
-
-	  // end
-	  
-	  nbt_tag_t* ambient_light = nbt_new_tag_float(1.0);
-	  nbt_set_tag_name(ambient_light, "ambient_light", strlen("ambient_light"));
-	  nbt_tag_compound_append(overworld, ambient_light);
-
-	  nbt_tag_t* min_y = nbt_new_tag_int(0);
-	  nbt_set_tag_name(min_y, "min_y", strlen("min_y"));
-	  nbt_tag_compound_append(overworld, min_y);
-	  
-	  nbt_tag_t* height = nbt_new_tag_int(32);
-	  nbt_set_tag_name(height, "height", strlen("height"));
-	  nbt_tag_compound_append(overworld, height);
-
-	  nbt_tag_t* logical_height = nbt_new_tag_int(0);
-	  nbt_set_tag_name(logical_height, "logical_height", strlen("logical_height"));
-	  nbt_tag_compound_append(overworld, logical_height);
-
-	  nbt_tag_t* monster_spawn_light_level = nbt_new_tag_int(0);
-	  nbt_set_tag_name(monster_spawn_light_level, "monster_spawn_light_level", strlen("monster_spawn_light_level"));
-	  nbt_tag_compound_append(overworld, monster_spawn_light_level);
-
-	  nbt_tag_t* monster_spawn_block_light_limit = nbt_new_tag_int(0);
-	  nbt_set_tag_name(monster_spawn_block_light_limit, "monster_spawn_block_light_limit", strlen("monster_spawn_block_light_limit"));
-	  nbt_tag_compound_append(overworld, monster_spawn_block_light_limit);
-
-	  nbt_tag_t* infiniburn = nbt_new_tag_string("#infiniburn_overworld", strlen("#infiniburn_overworld"));
-	  nbt_set_tag_name(infiniburn, "infiniburn", strlen("infiniburn"));
-	  nbt_tag_compound_append(overworld, infiniburn);
-
-	  nbt_tag_t* skybox = nbt_new_tag_string("overworld", strlen("overworld"));
-	  nbt_set_tag_name(skybox, "skybox", strlen("skybox"));
-	  nbt_tag_compound_append(overworld, skybox);
-
-	  nbt_tag_t* cardinal_light = nbt_new_tag_string("cardinal_light", strlen("cardinal_light"));
-	  nbt_set_tag_name(cardinal_light, "cardinal_light", strlen("cardinal_light"));
-	  nbt_tag_compound_append(overworld, cardinal_light);
-
-	  
-	}
-	
-	registry_data_entry damage_types[] = { { lstr_static("minecraft:overworld"), &overworld } };
-	reg_packet.entries = damage_types;
-	reg_packet.num_entries = sizeof(damage_types) / sizeof(damage_types[0]);
-
-	write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, REGISTRY_DATA_ID);
-	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIZE, reg_packet);
-	print_registry_data(reg_packet);
-	nbt_free_tag(overworld);
-	
-	send_packet(write_buf, max, players[player_num]->conn.fd);
-      }
-      {
-	packet_ptr = write_buf+4;
-	max = 0;
-	reg_packet.registry_id = lstr_static("minecraft:enchantment");
-	reg_packet.entries = NULL;
-	reg_packet.num_entries = 0;
-
-	write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, REGISTRY_DATA_ID);
-	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIZE, reg_packet);
-	print_registry_data(reg_packet);
-	send_packet(write_buf, max, players[player_num]->conn.fd);
-      }
-      {
-	packet_ptr = write_buf+4;
-	max = 0;
-	reg_packet.registry_id = lstr_static("minecraft:instrument");
-	reg_packet.entries = NULL;
-	reg_packet.num_entries = 0;
-
-	write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, REGISTRY_DATA_ID);
-	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIZE, reg_packet);
-	print_registry_data(reg_packet);
-	send_packet(write_buf, max, players[player_num]->conn.fd);
-      }      
-      {
-	packet_ptr = write_buf+4;
-	max = 0;
-	reg_packet.registry_id = lstr_static("minecraft:jukebox_song");
-	reg_packet.entries = NULL;
-	reg_packet.num_entries = 0;
-
-	write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, REGISTRY_DATA_ID);
-	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIZE, reg_packet);
-	print_registry_data(reg_packet);
-	send_packet(write_buf, max, players[player_num]->conn.fd);
-      }
-      {
-	packet_ptr = write_buf+4;
-	max = 0;
-	reg_packet.registry_id = lstr_static("minecraft:painting_variant");
-	/* reg_packet.entries = NULL; */
-	/* reg_packet.num_entries = 0; */
-	nbt_tag_t* overworld = nbt_new_tag_compound();
-	{
-	  nbt_tag_t* asset_id = nbt_new_tag_string("minecraft:earth", strlen("minecraft:earth"));
-	  nbt_set_tag_name(asset_id, "asset_id", strlen("asset_id"));
-	  nbt_tag_compound_append(overworld, asset_id);
-	  
-	  nbt_tag_t* width = nbt_new_tag_int(16);
-	  nbt_set_tag_name(width, "width", strlen("width"));
-	  nbt_tag_compound_append(overworld, width);
-
-	  
-	  nbt_tag_t* height = nbt_new_tag_int(16);
-	  nbt_set_tag_name(height, "height", strlen("height"));
-	  nbt_tag_compound_append(overworld, height);
-
-
-
-	  nbt_tag_t* title = nbt_new_tag_string("title", strlen("title"));
-	  nbt_set_tag_name(title, "title", strlen("title"));
-	  nbt_tag_compound_append(overworld, title);
-
-	  nbt_tag_t* author = nbt_new_tag_string("author", strlen("author"));
-	  nbt_set_tag_name(author, "author", strlen("author"));
-	  nbt_tag_compound_append(overworld, author);
-
-	  
-	}
-	
-	registry_data_entry damage_types[] = { { lstr_static("minecraft:earth"), &overworld } };
-	reg_packet.entries = damage_types;
-	reg_packet.num_entries = sizeof(damage_types) / sizeof(damage_types[0]);
-
-	write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, REGISTRY_DATA_ID);
-	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIZE, reg_packet);
-	print_registry_data(reg_packet);
-	nbt_free_tag(overworld);
-	
-	send_packet(write_buf, max, players[player_num]->conn.fd);
-      }
-      {
-	packet_ptr = write_buf+4;
-	max = 0;
-	reg_packet.registry_id = lstr_static("minecraft:test_environment");
-	reg_packet.entries = NULL;
-	reg_packet.num_entries = 0;
-
-	write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, REGISTRY_DATA_ID);
-	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIZE, reg_packet);
-	print_registry_data(reg_packet);
-	send_packet(write_buf, max, players[player_num]->conn.fd);
-      }
-      {
-	packet_ptr = write_buf+4;
-	max = 0;
-	reg_packet.registry_id = lstr_static("minecraft:test_instance");
-	reg_packet.entries = NULL;
-	reg_packet.num_entries = 0;
-
-	write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, REGISTRY_DATA_ID);
-	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIZE, reg_packet);
-	print_registry_data(reg_packet);
-	send_packet(write_buf, max, players[player_num]->conn.fd);
-      }
-      {
-	packet_ptr = write_buf+4;
-	max = 0;
-	reg_packet.registry_id = lstr_static("minecraft:trim_material");
-	reg_packet.entries = NULL;
-	reg_packet.num_entries = 0;
-
-	write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, REGISTRY_DATA_ID);
-	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIZE, reg_packet);
-	print_registry_data(reg_packet);
-	send_packet(write_buf, max, players[player_num]->conn.fd);
-      }
-      {
-	packet_ptr = write_buf+4;
-	max = 0;
-	reg_packet.registry_id = lstr_static("minecraft:trim_pattern");
-	reg_packet.entries = NULL;
-	reg_packet.num_entries = 0;
-
-	write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, REGISTRY_DATA_ID);
-	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIZE, reg_packet);
-	print_registry_data(reg_packet);
-	send_packet(write_buf, max, players[player_num]->conn.fd);
-      }
-      {
-	packet_ptr = write_buf+4;
-	max = 0;
-	reg_packet.registry_id = lstr_static("minecraft:worldgen/biome");
-	nbt_tag_t* overworld = nbt_new_tag_compound();
-	{
-	  nbt_tag_t* has_precipitation = nbt_new_tag_byte(0);
-	  nbt_set_tag_name(has_precipitation, "has_precipitation", strlen("has_precipitation"));
-	  nbt_tag_compound_append(overworld, has_precipitation);
-
-	  nbt_tag_t* temperature = nbt_new_tag_float(0.2);
-	  nbt_set_tag_name(temperature, "temperature", strlen("temperature"));
-	  nbt_tag_compound_append(overworld, temperature);
-
-	  nbt_tag_t* downfall = nbt_new_tag_float(0.2);
-	  nbt_set_tag_name(downfall, "downfall", strlen("downfall"));
-	  nbt_tag_compound_append(overworld, downfall);
-	  {
-	    nbt_tag_t* effects = nbt_new_tag_compound();
-	    nbt_set_tag_name(effects, "effects", strlen("effects"));
-
-	    nbt_tag_t* water_color = nbt_new_tag_int(1);
-	    nbt_set_tag_name(water_color, "water_color", strlen("water_color"));
-	    nbt_tag_compound_append(effects, water_color);
-
-	    nbt_tag_t* fog_color = nbt_new_tag_int(32);
-	    nbt_set_tag_name(fog_color, "fog_color", strlen("fog_color"));
-	    nbt_tag_compound_append(effects, fog_color);
-
-
-	    nbt_tag_t* water_fog_color = nbt_new_tag_int(32);
-	    nbt_set_tag_name(water_fog_color, "water_fog_color", strlen("water_fog_color"));
-	    nbt_tag_compound_append(effects, water_fog_color);
-
-	    nbt_tag_t* sky_color = nbt_new_tag_int(3200252);
-	    nbt_set_tag_name(sky_color, "sky_color", strlen("sky_color"));
-	    nbt_tag_compound_append(effects, sky_color);
-	    
-	    
-	    
-	    nbt_tag_compound_append(overworld, effects);
-	    
-	  }
-	  
-	}
-	
-	registry_data_entry damage_types[] = { { lstr_static("minecraft:plains"), &overworld } };
-	reg_packet.entries = damage_types;
-	reg_packet.num_entries = sizeof(damage_types) / sizeof(damage_types[0]);
-
-	write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, REGISTRY_DATA_ID);
-	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIZE, reg_packet);
-	print_registry_data(reg_packet);
-	nbt_free_tag(overworld);
-	
-	send_packet(write_buf, max, players[player_num]->conn.fd);
-      }
-      {
-	packet_ptr = write_buf+4;
-	max = 0;
-	reg_packet.registry_id = lstr_static("minecraft:cat_variant");
-	/* reg_packet.entries = NULL; */
-	/* reg_packet.num_entries = 0; */
-	nbt_tag_t* overworld = nbt_new_tag_compound();
-	{
-	  nbt_tag_t* asset_id = nbt_new_tag_string("minecraft:pig", strlen("minecraft:pig"));
-	  nbt_set_tag_name(asset_id, "asset_id", strlen("asset_id"));
-	  nbt_tag_compound_append(overworld, asset_id);
-	}
-	
-	registry_data_entry damage_types[] = { { lstr_static("minecraft:cat"), &overworld } };
-	reg_packet.entries = damage_types;
-	reg_packet.num_entries = sizeof(damage_types) / sizeof(damage_types[0]);
-
-	write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, REGISTRY_DATA_ID);
-	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIZE, reg_packet);
-	print_registry_data(reg_packet);
-	nbt_free_tag(overworld);
-	
-	send_packet(write_buf, max, players[player_num]->conn.fd);
-      }
-      {
-	packet_ptr = write_buf+4;
-	max = 0;
-	reg_packet.registry_id = lstr_static("minecraft:chicken_variant");
-	/* reg_packet.entries = NULL; */
-	/* reg_packet.num_entries = 0; */
-	nbt_tag_t* overworld = nbt_new_tag_compound();
-	{
-	  nbt_tag_t* asset_id = nbt_new_tag_string("minecraft:chicken_variant", strlen("minecraft:chicken_variant"));
-	  nbt_set_tag_name(asset_id, "asset_id", strlen("asset_id"));
-	  nbt_tag_compound_append(overworld, asset_id);
-
-	  nbt_tag_t* model = nbt_new_tag_string("normal", strlen("normal"));
-	  nbt_set_tag_name(model, "model", strlen("model"));
-	  nbt_tag_compound_append(overworld, model);
-	}
-	
-	registry_data_entry damage_types[] = { { lstr_static("minecraft:cat"), &overworld } };
-	reg_packet.entries = damage_types;
-	reg_packet.num_entries = sizeof(damage_types) / sizeof(damage_types[0]);
-
-	write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, REGISTRY_DATA_ID);
-	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIZE, reg_packet);
-	print_registry_data(reg_packet);
-	nbt_free_tag(overworld);
-	
-	send_packet(write_buf, max, players[player_num]->conn.fd);
-      }
-      {
-	packet_ptr = write_buf+4;
-	max = 0;
-	reg_packet.registry_id = lstr_static("minecraft:cow_variant");
-	/* reg_packet.entries = NULL; */
-	/* reg_packet.num_entries = 0; */
-	nbt_tag_t* overworld = nbt_new_tag_compound();
-	{
-	  nbt_tag_t* asset_id = nbt_new_tag_string("minecraft:chicken_variant", strlen("minecraft:chicken_variant"));
-	  nbt_set_tag_name(asset_id, "asset_id", strlen("asset_id"));
-	  nbt_tag_compound_append(overworld, asset_id);
-
-	  nbt_tag_t* model = nbt_new_tag_string("normal", strlen("normal"));
-	  nbt_set_tag_name(model, "model", strlen("model"));
-	  nbt_tag_compound_append(overworld, model);
-	}
-	
-	registry_data_entry damage_types[] = { { lstr_static("minecraft:cat"), &overworld } };
-	reg_packet.entries = damage_types;
-	reg_packet.num_entries = sizeof(damage_types) / sizeof(damage_types[0]);
-
-	write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, REGISTRY_DATA_ID);
-	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIZE, reg_packet);
-	print_registry_data(reg_packet);
-	nbt_free_tag(overworld);
-	
-	send_packet(write_buf, max, players[player_num]->conn.fd);
-      }
-      {
-	packet_ptr = write_buf+4;
-	max = 0;
-	reg_packet.registry_id = lstr_static("minecraft:frog_variant");
-	/* reg_packet.entries = NULL; */
-	/* reg_packet.num_entries = 0; */
-	nbt_tag_t* overworld = nbt_new_tag_compound();
-	{
-	  nbt_tag_t* asset_id = nbt_new_tag_string("minecraft:pig", strlen("minecraft:pig"));
-	  nbt_set_tag_name(asset_id, "asset_id", strlen("asset_id"));
-	  nbt_tag_compound_append(overworld, asset_id);
-	}
-	
-	registry_data_entry damage_types[] = { { lstr_static("minecraft:cat"), &overworld } };
-	reg_packet.entries = damage_types;
-	reg_packet.num_entries = sizeof(damage_types) / sizeof(damage_types[0]);
-
-	write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, REGISTRY_DATA_ID);
-	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIZE, reg_packet);
-	print_registry_data(reg_packet);
-	nbt_free_tag(overworld);
-	
-	send_packet(write_buf, max, players[player_num]->conn.fd);
-      }
-      {
-	packet_ptr = write_buf+4;
-	max = 0;
-	reg_packet.registry_id = lstr_static("minecraft:pig_variant");
-	/* reg_packet.entries = NULL; */
-	/* reg_packet.num_entries = 0; */
-	nbt_tag_t* overworld = nbt_new_tag_compound();
-	{
-	  nbt_tag_t* asset_id = nbt_new_tag_string("minecraft:chicken_variant", strlen("minecraft:chicken_variant"));
-	  nbt_set_tag_name(asset_id, "asset_id", strlen("asset_id"));
-	  nbt_tag_compound_append(overworld, asset_id);
-
-	  nbt_tag_t* model = nbt_new_tag_string("normal", strlen("normal"));
-	  nbt_set_tag_name(model, "model", strlen("model"));
-	  nbt_tag_compound_append(overworld, model);
-	}
-	
-	registry_data_entry damage_types[] = { { lstr_static("minecraft:cat"), &overworld } };
-	reg_packet.entries = damage_types;
-	reg_packet.num_entries = sizeof(damage_types) / sizeof(damage_types[0]);
-
-	write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, REGISTRY_DATA_ID);
-	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIZE, reg_packet);
-	print_registry_data(reg_packet);
-	nbt_free_tag(overworld);
-	
-	send_packet(write_buf, max, players[player_num]->conn.fd);
-      }
-      {
-	packet_ptr = write_buf+4;
-	max = 0;
-	reg_packet.registry_id = lstr_static("minecraft:wolf_variant");
-	/* reg_packet.entries = NULL; */
-	/* reg_packet.num_entries = 0; */
-	nbt_tag_t* overworld_root = nbt_new_tag_compound();
-	nbt_tag_t* overworld = nbt_new_tag_compound();
-	nbt_set_tag_name(overworld, "assets", strlen("assets"));
-	{
-	  nbt_tag_t* angry = nbt_new_tag_string("angry", strlen("angry"));
-	  nbt_set_tag_name(angry, "angry", strlen("angry"));
-	  nbt_tag_compound_append(overworld, angry);
-
-	  nbt_tag_t* wild = nbt_new_tag_string("angry", strlen("angry"));
-	  nbt_set_tag_name(wild, "wild", strlen("wild"));
-	  nbt_tag_compound_append(overworld, wild);
-
-	  nbt_tag_t* tame = nbt_new_tag_string("angry", strlen("angry"));
-	  nbt_set_tag_name(tame, "tame", strlen("tame"));
-	  nbt_tag_compound_append(overworld, tame);
-
-	}
-	nbt_tag_compound_append(overworld_root, overworld);
-	
-	registry_data_entry damage_types[] = { { lstr_static("minecraft:cat"), &overworld_root } };
-	reg_packet.entries = damage_types;
-	reg_packet.num_entries = sizeof(damage_types) / sizeof(damage_types[0]);
-
-	write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, REGISTRY_DATA_ID);
-	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIZE, reg_packet);
-	print_registry_data(reg_packet);
-	nbt_free_tag(overworld_root);
-	
-	send_packet(write_buf, max, players[player_num]->conn.fd);
-      }
-      {
-	packet_ptr = write_buf+4;
-	max = 0;
-	reg_packet.registry_id = lstr_static("minecraft:wolf_sound_variant");
-	/* reg_packet.entries = NULL; */
-	/* reg_packet.num_entries = 0; */
-	nbt_tag_t* overworld = nbt_new_tag_compound();
-	{
-	  nbt_tag_t* ambient_sound = nbt_new_tag_string("ambient.crimson_forest.loop", strlen("ambient.crimson_forest.loop"));
-	  nbt_set_tag_name(ambient_sound, "ambient_sound", strlen("ambient_sound"));
-	  nbt_tag_compound_append(overworld, ambient_sound);
-
-	  nbt_tag_t* death_sound = nbt_new_tag_string("ambient.crimson_forest.loop", strlen("ambient.crimson_forest.loop"));
-	  nbt_set_tag_name(death_sound, "death_sound", strlen("death_sound"));
-	  nbt_tag_compound_append(overworld, death_sound);
-	  
-	  nbt_tag_t* growl_sound = nbt_new_tag_string("ambient.crimson_forest.loop", strlen("ambient.crimson_forest.loop"));
-	  nbt_set_tag_name(growl_sound, "growl_sound", strlen("growl_sound"));
-	  nbt_tag_compound_append(overworld, growl_sound);
-
-	  nbt_tag_t* hurt_sound = nbt_new_tag_string("ambient.crimson_forest.loop", strlen("ambient.crimson_forest.loop"));
-	  nbt_set_tag_name(hurt_sound, "hurt_sound", strlen("hurt_sound"));
-	  nbt_tag_compound_append(overworld, hurt_sound);
-
-	  nbt_tag_t* pant_sound = nbt_new_tag_string("ambient.crimson_forest.loop", strlen("ambient.crimson_forest.loop"));
-	  nbt_set_tag_name(pant_sound, "pant_sound", strlen("pant_sound"));
-	  nbt_tag_compound_append(overworld, pant_sound);
-
-	  nbt_tag_t* whine_sound = nbt_new_tag_string("ambient.crimson_forest.loop", strlen("ambient.crimson_forest.loop"));
-	  nbt_set_tag_name(whine_sound, "whine_sound", strlen("whine_sound"));
-	  nbt_tag_compound_append(overworld, whine_sound);
-	  
-	}
-	
-	registry_data_entry damage_types[] = { { lstr_static("minecraft:cat"), &overworld } };
-	reg_packet.entries = damage_types;
-	reg_packet.num_entries = sizeof(damage_types) / sizeof(damage_types[0]);
-
-	write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, REGISTRY_DATA_ID);
-	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIZE, reg_packet);
-	print_registry_data(reg_packet);
-	nbt_free_tag(overworld);
-	
-	send_packet(write_buf, max, players[player_num]->conn.fd);
-      }
-
-      {// finish configuration
-	packet_ptr = write_buf+4;
-	max = 0;
-	write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, FINISH_CONFIGURATION_ID);
-	finish_configuration config;
-	write_finish_configuration(&packet_ptr, &max, WRITE_BUF_SIZE, config);
-	send_packet(write_buf, max, players[player_num]->conn.fd);
-      }      
-    } else if (packet_type == ACKGNOWLEDGE_SERVER_CONFIGURATION_ID) {
-      puts("\nconfiguration finished\n");
-      players[player_num]->connection_state = 4; // yippee, play state
-      login_play play;
-      play.eid = 0;
-      play.is_hardcore = 0;
-      lstr dim_names[] = { lstr_static("minecraft:overworld") };
-      play.dimension_names = &*dim_names;
-      play.dimension_name_count = 1;
-      play.max_players = 1;
-      play.view_distance = 10;
-      play.simulation_distance = 10;
-      play.reduced_debug_info = false;
-      play.enable_respawn_screen = false;
-      play.do_limited_crafting = false;
-      play.dimension_type = 0;
-      play.dimension_name = lstr_static("minecraft:overworld");
-      play.hashed_seed = 0;
-      play.game_mode = 1;
-      play.prev_game_mode = -1;
-      play.is_debug = false;
-      play.is_flat = false;
-      play.has_death_location = false;
-      play.portal_cooldown = 10;
-      play.sea_level = 10;
-      play.enforces_secure_chat = false;
-
-      uint8_t *packet_ptr = write_buf+4;
-      write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, LOGIN_PLAY_ID);
-      write_login_play(&packet_ptr, &max, WRITE_BUF_SIZE, play);
-      send_packet(write_buf, max, players[player_num]->conn.fd);
-
-
-      packet_ptr = write_buf+4;
-      max = 0;
-      syncronize_player_position packet;
-      packet.teleport_id = 10;
-      packet.x = 0.0;
-      packet.y = 2000.0;
-      packet.z = 0.0;
-      packet.velocity_x = 0.0;
-      packet.velocity_y = 0.0;
-      packet.velocity_z = 0.0;
-      packet.yaw = 0.0;
-      packet.pitch = 0.0;
-      packet.flags = 0;
-      write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, SYNCRONIZE_PLAYER_POSITION_ID);
-      write_syncronize_player_position(&packet_ptr, &max, WRITE_BUF_SIZE, packet);
-      send_packet(write_buf, max, players[player_num]->conn.fd);
-    }
-  } else if  (players[player_num]->connection_state == 4) { // play
-    if(packet_type != 0x1B) {
-      clientbound_keep_alive alive;
-      alive.id = 1;
-      uint8_t *packet_ptr = write_buf+4;
-      write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, CLIENTBOUND_KEEP_ALIVE_PLAY_ID);
-      write_clientbound_keep_alive(&packet_ptr, &max, WRITE_BUF_SIZE, alive);
-      send_packet(write_buf, max, players[player_num]->conn.fd);
-
-      
-      
-    }
-
-  }
-    
-  
-  free(raw_data);
-  return pos;
+  write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, SYNCRONIZE_PLAYER_POSITION_ID);
+  write_syncronize_player_position(&packet_ptr, &max, WRITE_BUF_SIZE, packet);
+  send_packet(write_buf, max, server->players[player_num]->conn.fd);
 }
 
-void handle_packet(int player_num, uint8_t *buf, int nbytes) {
-  uint8_t *read_buf = buf;
-  uint32_t pos = 0;
-  int packet_len;
-		      
-  int error = read_var_int(&read_buf, &pos, nbytes, &packet_len);
+void send_game_event(simple_server *server, int player_num, uint8_t event, float value) {
+  game_event packet;
+  packet.event_id = event;
+  packet.value = value;
+  uint8_t *packet_ptr = write_buf+4;
+  uint32_t max = 0;
+  
+  write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, GAME_EVENT_ID);
+  write_game_event(&packet_ptr, &max, WRITE_BUF_SIZE, packet);
+  send_packet(write_buf, max, server->players[player_num]->conn.fd);
+}
+
+void send_set_center_chunk(simple_server *server, int player_num, int32_t x, int32_t y) {
+  set_center_chunk packet;
+  packet.x = x;
+  packet.y = y;
+  uint8_t *packet_ptr = write_buf+4;
+  uint32_t max = 0;
+  
+  write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, SET_CENTER_CHUNK_ID);
+  write_set_center_chunk(&packet_ptr, &max, WRITE_BUF_SIZE, packet);
+  send_packet(write_buf, max, server->players[player_num]->conn.fd);
+}
+
+#define MAX_CHUNK_SIZE 1310720
+void send_test_chunks(simple_server *server, int player_num, int32_t x, int32_t z, int block_id) {
+  chunk_data_and_update_light packet;
+  packet.heightmap_count = 0;
+  packet.block_entities_count = 0;
+  packet.x = x;
+  packet.y = z;
+
+  packet.o1 = 0;
+  packet.o2 = 0;
+  packet.o3 = 0;
+  packet.o4 = 0;
+  packet.o5 = 0;
+  packet.o6 = 0;
+
+
+  uint8_t *packet_ptr = write_buf+4;
+  uint32_t max = 0;
+  uint8_t chunk_data[MAX_CHUNK_SIZE];
+  uint8_t *chunk_data_ptr = chunk_data;
+  uint32_t chunk_data_max = 0;
+  
+
+  chunk_section section;
+  section.block_count = 4096;
+
+  section.block_states.bits_per_entry = 15;
+  section.block_states.format = 2;
+  for(int i = 0; i < 4096; i++)
+    section.block_states.data[i] = 0;
+
+  section.biomes.bits_per_entry = 0;
+  section.biomes.format = 0;
+  section.biomes.value = 0;
+
+  for(int i = 0; i < 24; i++) {
+    for(int local_y = 0; local_y < 16; local_y++) {
+      for(int local_z = 0; local_z < 16; local_z++) {
+	for(int local_x = 0; local_x < 16; local_x++) {
+	  float block_x = (x*16)+local_x;
+	  float block_y = (i*16)+local_y;
+	  float block_z = (z*16)+local_z;
+	  int idx = (local_z*16*16)+(local_y*16)+local_x;
+	  float noise1 = stb_perlin_noise3_seed(block_x/10, block_y/10, block_z/10, 0, 0, 0, 0);
+	  if (noise1 > 0.0)
+	    section.block_states.data[idx] = 0;
+	  else
+	    section.block_states.data[idx] = 1;
+	}
+      }
+    }
+    
+    int error = write_chunk_section(&chunk_data_ptr, &chunk_data_max, MAX_CHUNK_SIZE, section);
+    if (error) {
+      printf("error while writing chunk section: %d\n", error);
+      return;
+    }    
+  }
+  packet.data = chunk_data;
+  packet.data_len = chunk_data_max;
+  write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE-4, CHUNK_DATA_AND_UPDATE_LIGHT_ID);
+  int error = write_chunk_data_and_update_light(&packet_ptr, &max, WRITE_BUF_SIZE-4, packet);
   if (error) {
-    printf("error: %d\n", error); // todo -- append to backlog
-    deallocate_player(player_num);
+    printf("error: %d\n", error);
     return;
   }
-  uint32_t remaining_data = nbytes-(read_buf - buf); 
-
-
-  if (remaining_data < packet_len) {
-    printf("error: too little data supplied\ndata remaining after read: %d\n", remaining_data);// todo -- append to backlog
-    printf("data needed to read more: %d\n", packet_len);
-    deallocate_player(player_num);
-    return;
-  }
-  int left = nbytes-packet_len-1;
-  uint8_t more = left!=0;
-  uint8_t *left_off = read_buf+packet_len;
-  int read_bytes = handle_player_packet(player_num, read_buf, packet_len);
-  printf("read %d\nleft %d\n\n", read_bytes, left);
-  if (more) {
-    /* printf("error: too much data supplied\ndata left: %d\n", remaining_data); */
-    /* printf("data we haves len: %d\n", packet_len); */
-    /* deallocate_player(player_num) */;
-    printf("more\n");
-    handle_packet(player_num, left_off, left);
-    return;
-  }
+  send_packet(write_buf, max, server->players[player_num]->conn.fd);
 }
 
+
+void tick_callback(simple_server *server) {
+  for(int i = 0; i < server->max_players; i++) {
+    if (server->player_slots[i]) {
+      player* m_player = server->players[i];
+      if(m_player->connection_state == 4) {
+	// send keepalives
+	/* if(total_ticks % 5 == 0) // like, 1 seconds */
+	/*   teleport_player(server, i, 0, y++, 0); */
+
+	if(total_ticks % 400 == 0) {// like, 16 seconds
+	  clientbound_keep_alive alive;
+	  alive.id = total_ticks;
+	  uint8_t *packet_ptr = write_buf+4;
+	  uint32_t max = 0;
+	  write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, CLIENTBOUND_KEEP_ALIVE_PLAY_ID);
+	  write_clientbound_keep_alive(&packet_ptr, &max, WRITE_BUF_SIZE, alive);
+	  send_packet(write_buf, max, m_player->conn.fd);
+	}
+      }
+    }
+  }
+  total_ticks++;
+}
+
+
+
+void finish_configuration_cb(simple_server *server, int player_num) {
+  
+  login_play play;
+  play.eid = 0;
+  play.is_hardcore = 0;
+  lstr dim_names[] = { lstr_static("minecraft:overworld") };
+  play.dimension_names = &*dim_names;
+  play.dimension_name_count = 1;
+  play.max_players = 1;
+  play.view_distance = 10;
+  play.simulation_distance = 10;
+  play.reduced_debug_info = false;
+  play.enable_respawn_screen = false;
+  play.do_limited_crafting = false;
+  play.dimension_type = 0;
+  play.dimension_name = lstr_static("minecraft:overworld");
+  play.hashed_seed = 0;
+  play.game_mode = 1;
+  play.prev_game_mode = -1;
+  play.is_debug = false;
+  play.is_flat = false;
+  play.has_death_location = false;
+  play.portal_cooldown = 10;
+  play.sea_level = 10;
+  play.enforces_secure_chat = false;
+
+  uint8_t *packet_ptr = write_buf+4;
+  uint32_t max = 0;
+  write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, LOGIN_PLAY_ID);
+  write_login_play(&packet_ptr, &max, WRITE_BUF_SIZE, play);
+  send_packet(write_buf, max, server->players[player_num]->conn.fd);
+
+  send_game_event(server, player_num, 13, 0.0);
+  send_set_center_chunk(server, player_num, 0, 0);
+  int block_id = 1;
+  for(int x = -8; x < 8; x++)
+    for(int y = -8; y < 8; y++)
+      send_test_chunks(server, player_num, x, y, block_id);
+  teleport_player(server, player_num, 0, 384, 0);
+}
 
 int main(void)
 {
-       // master file descriptor list
-    fd_set read_fds; // temp file descriptor list for select()
-    struct sockaddr_in myaddr;     // server address
-    struct sockaddr_in remoteaddr; // client address
-    int fdmax;        // maximum file descriptor number
-    int listener;     // listening socket descriptor
-    int newfd;        // newly accept()ed socket descriptor
-    uint8_t buf[1024];    // buffer for client data
-    int nbytes;
-    int yes=1;        // for setsockopt() SO_REUSEADDR, below
-    socklen_t addrlen;
-    int i;
-
-    FD_ZERO(&master);    // clear the master and temp sets
-    FD_ZERO(&read_fds);
-
-    // get the listener
-    if ((listener = socket(PF_INET, SOCK_STREAM, 0)) == -1) {
-        perror("socket");
-        exit(1);
-    }
-
-    // lose the pesky "address already in use" error message
-    if (setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &yes,
-                                                        sizeof(int)) == -1) {
-        perror("setsockopt");
-        exit(1);
-    }
-
-    // bind
-    myaddr.sin_family = AF_INET;
-    myaddr.sin_addr.s_addr = INADDR_ANY;
-    myaddr.sin_port = htons(PORT);
-    memset(&(myaddr.sin_zero), '\0', 8);
-    if (bind(listener, (struct sockaddr *)&myaddr, sizeof(myaddr)) == -1) {
-        perror("bind");
-        exit(1);
-    }
-
-    // listen
-    if (listen(listener, 10) == -1) {
-        perror("listen");
-        exit(1);
-    }
-
-    // add the listener to the master set
-    FD_SET(listener, &master);
-
-    // keep track of the biggest file descriptor
-    fdmax = listener; // so far, it's this one
-    
-    // main loop
-    for(;;) {
-        read_fds = master; // copy it
-	puts("waiting");
-        if (select(fdmax+1, &read_fds, NULL, NULL, NULL) == -1) {
-            perror("select");
-            exit(1);
-        }
-	puts("still going");
-
-        // run through the existing connections looking for data to read
-        for(i = 0; i <= fdmax; i++) {
-	  
-	  if (FD_ISSET(i, &read_fds)) { // we got one!!
-                if (i == listener) {
-                    // handle new connections
-                    addrlen = sizeof(remoteaddr);
-                    if ((newfd = accept(listener, (struct sockaddr *)&remoteaddr,
-                                                             &addrlen)) == -1) { 
-                        perror("accept");
-
-                    } else {
-			int flag = 1;
-			if (setsockopt(newfd, SOL_TCP, TCP_NODELAY, &flag, sizeof(flag)) < 0) {
-			  perror("setsockopt(TCP_NODELAY) failed");
-			  close(newfd);
-			}
-
-			int flags = fcntl(newfd, F_GETFL, 0);
-			if (flags == -1) {
-			  // Handle error
-			  perror("fcntl F_GETFL");
-			}
-
-			// Set the O_NONBLOCK flag
-			if (fcntl(newfd, F_SETFL, flags | O_NONBLOCK) == -1) {
-			  // Handle error
-			  perror("fcntl F_SETFL");
-			}
-
-
-
-			FD_SET(newfd, &master); // add to master set
-			allocate_player(newfd);
-
-
-			if (newfd > fdmax) {    // keep track of the maximum
-                            fdmax = newfd;
-                        }
-
-			
-                        printf("server: new connection from %s on "
-                            "socket %d\n", inet_ntoa(remoteaddr.sin_addr), newfd);
-                    }
-                } else {
-		  int player_num = -1;
-		  for (int k = 0; k < MAX_PLAYERS; k++) {
-		    if (player_slots[k] && players[k]->conn.fd == i) {
-		      player_num = k;
-		    }
-		  }
-		  if(player_num == -1)
-		    puts("very bad stuff, no player id found");
-
-		  // handle data from a client
-		  if ((nbytes = read(i, buf, sizeof(buf))) <= 0) {
-		    // got error or connection closed by client
-		    if (nbytes == 0) {
-		      // connection closed
-		      printf("server: socket %d hung up\n", i);
-		    } else {
-		      perror("recv");
-		    }
-		    deallocate_player(player_num);
-		    FD_CLR(i, &master); // remove from master set
-		    
-		  } else {
-		    // we got some data from a client
-		    
-		    handle_packet(player_num, buf, nbytes);
-		  }
-                }
-            }
-        }
-    }
-    
-    return 0;
+  simple_server *server =  allocate_simple_server(MAX_PLAYERS);
+  start_server(server, PORT, (simple_server_callback){ handle_packet_cb, tick_callback, finish_configuration_cb });
 } 
 

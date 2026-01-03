@@ -161,9 +161,16 @@
 #include "packets/play.h"
 
 
+// general structure for "custom" readers writers and printers
+#if defined(PACKET_READ_IMPL)
 
+#elif defined(PACKET_WRITE_IMPL)
 
+#elif defined(PACKET_PRINT_IMPL)
 
+#else
+
+#endif
 
 
 

@@ -59,7 +59,7 @@ PACKET(finish_configuration,
 //
 PACKET(registry_data_entry,
        R(var_str, lstr, entry_id);
-       O(nbt, nbt_tag_t*, data);
+       O(network_nbt, nbt_tag_t*, data);
        );
 PACKET(registry_data,
        R(var_str, lstr, registry_id);

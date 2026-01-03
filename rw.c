@@ -63,6 +63,11 @@ int read_nbt(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, nbt_t
   *out = nbt_parse(reader, 0);
   return 0;
 }
+// todo -- make sure this works
+int read_network_nbt(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, nbt_tag_t **out) {
+  return read_nbt(packet_buffer, pos, max, out);
+}
+
 
 int read_ubyte(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, uint8_t *out) {
   if (*pos+1 > max)
@@ -278,7 +283,7 @@ size_t write_nbt_inner(void* userdata, uint8_t* data, size_t size) {
   return size;
 }
 
-int write_nbt(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, nbt_tag_t *val) {
+int _write_nbt(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, nbt_tag_t *val, uint8_t write_name) {
   nbt_writer_t writer;
   struct buffer_data data;
   data.packet_buffer = packet_buffer;
@@ -289,6 +294,13 @@ int write_nbt(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, nbt_
   writer.userdata = &data;
   nbt_write(writer, val, NBT_WRITE_FLAG_USE_RAW, false);
   return 0;
+}
+int write_nbt(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, nbt_tag_t *val) {
+  return _write_nbt(packet_buffer, pos, max, val, true);
+}
+
+int write_network_nbt(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, nbt_tag_t *val) {
+  return _write_nbt(packet_buffer, pos, max, val, false);
 }
 
 
@@ -547,7 +559,9 @@ void print_nbt_tree(nbt_tag_t* tag, int indentation) {
 
 void print_nbt(nbt_tag_t *val) {
   print_nbt_tree(val, 0);
-  //printf("[nbt]");
+}
+void print_network_nbt(nbt_tag_t *val) {
+  print_nbt_tree(val, 0);
 }
 
 void print_ubyte(uint8_t val) {

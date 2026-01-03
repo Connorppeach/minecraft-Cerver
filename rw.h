@@ -20,6 +20,7 @@ int read_var_long(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, 
 int read_var_str(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, lstr *out);
 int read_uuid(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, uuid *out);
 int read_nbt(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, nbt_tag_t **out);
+int read_network_nbt(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, nbt_tag_t **out);
 
 int write_bool(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, uint8_t val);
 int write_byte(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, int8_t val);
@@ -35,7 +36,7 @@ int write_var_int(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, 
 int write_var_long(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, int64_t value);
 int write_var_str(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, lstr value);
 int write_uuid(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, uuid value);
-int write_nbt(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, nbt_tag_t *val);
+int write_network_nbt(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, nbt_tag_t *val);
 
 
 void print_bool(uint8_t val);
@@ -52,6 +53,6 @@ void print_var_int(int32_t value);
 void print_var_long(int64_t value);
 void print_var_str(lstr value);
 void print_uuid(uuid value);
-void print_nbt(nbt_tag_t *val);
+void print_network_nbt(nbt_tag_t *val);
 
 #endif // _H_RW_CERVER_
