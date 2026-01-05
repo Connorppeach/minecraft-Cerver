@@ -18,4 +18,8 @@ typedef struct {
   float pitch, yaw;
 } mc_location;
 
+typedef struct {
+  double x, y, z;
+} lpvec3;
+
 #endif

@@ -147,9 +147,9 @@ void send_spawn_entity(simple_server *server, int player_num, int32_t entity_id,
   packet.pitch = pitch;
   packet.yaw = yaw;
   packet.head_angle = head_yaw;
-  packet.velocity_x = velocity_x;
-  packet.velocity_y = velocity_y;
-  packet.velocity_z = velocity_z;
+  packet.velocity.x = 0.0;
+  packet.velocity.y = 0.0;
+  packet.velocity.z = 0.0;
   packet.data = data;
 
   uint8_t *packet_ptr = write_buf+4;

@@ -24,6 +24,70 @@ int read_bool(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, uint
   
   return 0;
 }
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+#define unpack(x) (MIN((long)x & (long)32767, 32766.0) * 2.0 / 32766.0 - 1.0)
+int read_lpvec3(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, lpvec3 *out) {
+  uint8_t lowest;
+  int error;
+  error = read_ubyte(packet_buffer, pos, max, &lowest);
+  if(error) return error;
+  if (lowest == 0) {
+    out->x = 0;
+    out->y = 0;
+    out->z = 0;
+    return 0;
+  } else {
+    uint8_t middle;
+    error = read_ubyte(packet_buffer, pos, max, &middle);
+    if(error) return error;
+    uint32_t highest;
+    error = read_uint(packet_buffer, pos, max, &highest);
+    if(error) return error;
+    long buffer = highest << 16 | middle << 8 | lowest;
+    long scale = lowest & 3;
+    if ((lowest & 4) == 4) {
+      int32_t input;
+      error = read_var_int(packet_buffer, pos, max, &input);
+      if(error) return error;
+      scale |= (input & 4294967295L) << 2;
+    }
+    out->x = unpack(buffer >> 3) * scale;
+    out->y = unpack(buffer >> 18) * scale;
+    out->z = unpack(buffer >> 33) * scale;
+    return 0;
+  }
+}
+#include <math.h>
+#define pack(x) (long)round((x * 0.5 + 0.5) * 32766.0)
+int write_lpvec3(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, lpvec3 to_write) {
+  double x = to_write.x;
+  double y = to_write.y;
+  double z = to_write.z;
+  double chessboardLength = MAX(abs(x), MAX(abs(y), abs(z)));
+  if (chessboardLength < 3.051944088384301E-5) {
+    return write_byte(packet_buffer, pos, max, 0);
+  } else {
+    long scale = ceil(chessboardLength);
+    uint8_t isPartial = (scale & 3L) != scale;
+    long markers = isPartial ? (scale & 3L) | 4L : scale;
+    long xn = pack(x / scale) << 3;
+    long yn = pack(y / scale) << 18;
+    long zn = pack(z / scale) << 33;
+    long buffer = markers | xn | yn | zn;
+    int error = write_byte(packet_buffer, pos, max, (int8_t)buffer);
+    if(error) return error;
+    error = write_byte(packet_buffer, pos, max, (int8_t)(buffer >> 8));
+    if(error) return error;
+    error = write_int(packet_buffer, pos, max,(int)(buffer >> 16));
+    if(error) return error;
+    if (isPartial) {
+      error = write_var_int(packet_buffer, pos, max, (int)(scale >> 2));
+      if(error) return error;
+    }
+    return 0;
+  }
+}
 
 
 int read_byte(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, int8_t *out) {
@@ -465,6 +529,10 @@ void print_bool(uint8_t val) {
   else
     printf("false");
 };
+
+void print_lpvec3(lpvec3 val) {
+  printf("[%lf, %lf, %lf]", val.x, val.y, val.z);
+}
 void print_byte(int8_t val) {
   printf("%d", val);
 };

@@ -286,9 +286,9 @@ int handle_player_packet(simple_server *server, int player_num, uint8_t *packet_
 	  nbt_set_tag_name(skybox, "skybox", strlen("skybox"));
 	  nbt_tag_compound_append(overworld, skybox);
 
-	  nbt_tag_t* cardinal_light = nbt_new_tag_string("cardinal_light", strlen("cardinal_light"));
-	  nbt_set_tag_name(cardinal_light, "cardinal_light", strlen("cardinal_light"));
-	  nbt_tag_compound_append(overworld, cardinal_light);
+	  /* nbt_tag_t* cardinal_light = nbt_new_tag_string("cardinal_light", strlen("cardinal_light")); */
+	  /* nbt_set_tag_name(cardinal_light, "cardinal_light", strlen("cardinal_light")); */
+	  /* nbt_tag_compound_append(overworld, cardinal_light); */
 
 	  
 	}
@@ -385,6 +385,7 @@ int handle_player_packet(simple_server *server, int player_num, uint8_t *packet_
 	
 	send_packet(write_buf, max, m_player->conn.fd);
       }
+      
       {
 	packet_ptr = write_buf+4;
 	max = 0;
@@ -494,6 +495,30 @@ int handle_player_packet(simple_server *server, int player_num, uint8_t *packet_
 	packet_ptr = write_buf+4;
 	max = 0;
 	reg_packet.registry_id = lstr_static("minecraft:cat_variant");
+	/* reg_packet.entries = NULL; */
+	/* reg_packet.num_entries = 0; */
+	nbt_tag_t* overworld = nbt_new_tag_compound();
+	{
+	  nbt_tag_t* asset_id = nbt_new_tag_string("minecraft:pig", strlen("minecraft:pig"));
+	  nbt_set_tag_name(asset_id, "asset_id", strlen("asset_id"));
+	  nbt_tag_compound_append(overworld, asset_id);
+	}
+	
+	registry_data_entry damage_types[] = { { lstr_static("minecraft:cat"), &overworld } };
+	reg_packet.entries = damage_types;
+	reg_packet.num_entries = sizeof(damage_types) / sizeof(damage_types[0]);
+
+	write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, REGISTRY_DATA_ID);
+	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIZE, reg_packet);
+	//print_registry_data(reg_packet);
+	nbt_free_tag(overworld);
+	
+	send_packet(write_buf, max, m_player->conn.fd);
+      }
+      {
+	packet_ptr = write_buf+4;
+	max = 0;
+	reg_packet.registry_id = lstr_static("minecraft:zombie_nautilus_variant");
 	/* reg_packet.entries = NULL; */
 	/* reg_packet.num_entries = 0; */
 	nbt_tag_t* overworld = nbt_new_tag_compound();

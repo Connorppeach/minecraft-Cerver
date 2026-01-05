@@ -25,7 +25,11 @@
 #define CHAT_SUGGESTIONS_ID (SET_COOLDOWN_ID+1)
 #define CLIENTBOUND_PLUGIN_MESSAGE_ID (CHAT_SUGGESTIONS_ID+1)
 #define DAMAGE_EVENT_ID (CLIENTBOUND_PLUGIN_MESSAGE_ID+1)
-#define DEBUG_SAMPLE_ID (DAMAGE_EVENT_ID+1)
+#define DEBUG_BLOCK_VALUE_ID (DAMAGE_EVENT_ID+1)
+#define DEBUG_CHUNK_VALUE_ID (DEBUG_BLOCK_VALUE_ID+1)
+#define DEBUG_ENTITY_VALUE_ID (DEBUG_CHUNK_VALUE_ID+1)
+#define DEBUG_EVENT_ID (DEBUG_ENTITY_VALUE_ID+1)
+#define DEBUG_SAMPLE_ID (DEBUG_EVENT_ID+1)
 #define DELETE_MESSAGE_ID (DEBUG_SAMPLE_ID+1)
 #define DISCONNECT_ID (DELETE_MESSAGE_ID+1)
 #define DISGUISED_CHAT_MESSAGE_ID (DISCONNECT_ID+1)
@@ -34,7 +38,8 @@
 #define EXPLOSION_ID (TELEPORT_ENTITY_ID+1)
 #define UNLOAD_CHUNK_ID (EXPLOSION_ID+1)
 #define GAME_EVENT_ID (UNLOAD_CHUNK_ID+1)
-#define OPEN_HORSE_SCREEN_ID (GAME_EVENT_ID+1)
+#define GAME_TEST_HIGHLIGHT_POSITION_ID (GAME_EVENT_ID+1)
+#define OPEN_HORSE_SCREEN_ID (GAME_TEST_HIGHLIGHT_POSITION_ID+1)
 #define HURT_ANIMATION_ID (OPEN_HORSE_SCREEN_ID+1)
 #define INIT_WORLD_BORDER_ID (HURT_ANIMATION_ID+1)
 #define CLIENTBOUND_KEEP_ALIVE_PLAY_ID (INIT_WORLD_BORDER_ID+1)
@@ -292,13 +297,11 @@ PACKET(spawn_entity,
        R(double, double, x);
        R(double, double, y);
        R(double, double, z);
+       R(lpvec3, lpvec3, velocity);
        R(ubyte, uint8_t, pitch);
        R(ubyte, uint8_t, yaw);
        R(ubyte, uint8_t, head_angle);
        R(var_int, int32_t, data);
-       R(short, int16_t, velocity_x);
-       R(short, int16_t, velocity_y);
-       R(short, int16_t, velocity_z);
        );
 
 // serverbound
