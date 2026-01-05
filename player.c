@@ -9,7 +9,7 @@ player *create_player(int fd) {
   player *m_player = (player*)malloc(sizeof(player));
   m_player->conn.fd = fd;
   m_player->conn.backlog = NULL;
-  m_player->connection_state = 0;
+  m_player->conn.connection_state = 0;
   m_player->conn.backlog_len = 0;
   return m_player;
 }

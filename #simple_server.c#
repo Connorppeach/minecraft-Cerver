@@ -388,6 +388,51 @@ int handle_player_packet(simple_server *server, int player_num, uint8_t *packet_
       {
 	packet_ptr = write_buf+4;
 	max = 0;
+	reg_packet.registry_id = lstr_static("minecraft:painting_variant");
+	/* reg_packet.entries = NULL; */
+	/* reg_packet.num_entries = 0; */
+	nbt_tag_t* overworld = nbt_new_tag_compound();
+	{
+	  nbt_tag_t* asset_id = nbt_new_tag_string("minecraft:earth", strlen("minecraft:earth"));
+	  nbt_set_tag_name(asset_id, "asset_id", strlen("asset_id"));
+	  nbt_tag_compound_append(overworld, asset_id);
+	  
+	  nbt_tag_t* width = nbt_new_tag_int(16);
+	  nbt_set_tag_name(width, "width", strlen("width"));
+	  nbt_tag_compound_append(overworld, width);
+
+	  
+	  nbt_tag_t* height = nbt_new_tag_int(16);
+	  nbt_set_tag_name(height, "height", strlen("height"));
+	  nbt_tag_compound_append(overworld, height);
+
+
+
+	  nbt_tag_t* title = nbt_new_tag_string("title", strlen("title"));
+	  nbt_set_tag_name(title, "title", strlen("title"));
+	  nbt_tag_compound_append(overworld, title);
+
+	  nbt_tag_t* author = nbt_new_tag_string("author", strlen("author"));
+	  nbt_set_tag_name(author, "author", strlen("author"));
+	  nbt_tag_compound_append(overworld, author);
+
+	  
+	}
+	
+	registry_data_entry damage_types[] = { { lstr_static("minecraft:earth"), &overworld } };
+	reg_packet.entries = damage_types;
+	reg_packet.num_entries = sizeof(damage_types) / sizeof(damage_types[0]);
+
+	write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, REGISTRY_DATA_ID);
+	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIZE, reg_packet);
+	//print_registry_data(reg_packet);
+	nbt_free_tag(overworld);
+	
+	send_packet(write_buf, max, m_player->conn.fd);
+      }      
+      {
+	packet_ptr = write_buf+4;
+	max = 0;
 	reg_packet.registry_id = lstr_static("minecraft:test_environment");
 	reg_packet.entries = NULL;
 	reg_packet.num_entries = 0;

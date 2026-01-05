@@ -149,7 +149,7 @@ int read_float(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, flo
   out_l |= *((*packet_buffer)++)<<16;
   out_l |= *((*packet_buffer)++)<<8;
   out_l |= *((*packet_buffer)++);
-  memcpy(&out, &out_l, sizeof(out_l));
+  memcpy(out, &out_l, sizeof(out_l));
   return 0;
 }
 
@@ -167,8 +167,7 @@ int read_double(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, do
   out_l |= ((uint64_t)*((*packet_buffer)++))<<16;
   out_l |= ((uint64_t)*((*packet_buffer)++))<<8;
   out_l |= ((uint64_t)*((*packet_buffer)++));
-  memcpy(&out, &out_l, sizeof(out_l));
-  
+  memcpy(out, &out_l, sizeof(out_l));
   return 0;
 }
 

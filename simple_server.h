@@ -29,6 +29,7 @@ typedef struct {
   void (*packet_callback)(simple_server *server, int player_num, int packet_type, uint8_t *packet_buf, unsigned int buf_len);
   void (*tick_callback)(simple_server *server);
   void (*finish_configuration)(simple_server *server, int player_num);
+  void (*on_move)(simple_server *server, int player_num);
 } simple_server_callback;
 int allocate_player(simple_server *server, int fd);
 void deallocate_player(simple_server *server, int player_id);

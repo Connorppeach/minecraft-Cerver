@@ -32,6 +32,7 @@
 #define PACKET(name, ...)						\
   int read_##name (uint8_t **packet_buffer, unsigned int *pos, unsigned int max, name *out) { \
   int error = 0;							\
+  (void)error;								\
   __VA_ARGS__								\
     return 0;								\
   }
@@ -65,6 +66,7 @@
 #define PACKET(name, ...)						\
   int write_##name (uint8_t **packet_buffer, unsigned int *pos, unsigned int max, name out) { \
     int error = 0;							\
+    (void)error;							\
     __VA_ARGS__								\
     return 0;								\
   }
