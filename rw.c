@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <math.h>
 #include "rw.h"
 
 #define NBT_IMPLEMENTATION
@@ -11,6 +12,8 @@
 #define SEGMENT_BITS 0x7F
 #define CONTINUE_BIT 0x80
 
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
 
 
 int read_bool(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, uint8_t *out) {
@@ -24,70 +27,8 @@ int read_bool(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, uint
   
   return 0;
 }
-#define MIN(a, b) ((a) < (b) ? (a) : (b))
-#define MAX(a, b) ((a) > (b) ? (a) : (b))
-#define unpack(x) (MIN((long)x & (long)32767, 32766.0) * 2.0 / 32766.0 - 1.0)
-int read_lpvec3(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, lpvec3 *out) {
-  uint8_t lowest;
-  int error;
-  error = read_ubyte(packet_buffer, pos, max, &lowest);
-  if(error) return error;
-  if (lowest == 0) {
-    out->x = 0;
-    out->y = 0;
-    out->z = 0;
-    return 0;
-  } else {
-    uint8_t middle;
-    error = read_ubyte(packet_buffer, pos, max, &middle);
-    if(error) return error;
-    uint32_t highest;
-    error = read_uint(packet_buffer, pos, max, &highest);
-    if(error) return error;
-    long buffer = highest << 16 | middle << 8 | lowest;
-    long scale = lowest & 3;
-    if ((lowest & 4) == 4) {
-      int32_t input;
-      error = read_var_int(packet_buffer, pos, max, &input);
-      if(error) return error;
-      scale |= (input & 4294967295L) << 2;
-    }
-    out->x = unpack(buffer >> 3) * scale;
-    out->y = unpack(buffer >> 18) * scale;
-    out->z = unpack(buffer >> 33) * scale;
-    return 0;
-  }
-}
-#include <math.h>
-#define pack(x) (long)round((x * 0.5 + 0.5) * 32766.0)
-int write_lpvec3(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, lpvec3 to_write) {
-  double x = to_write.x;
-  double y = to_write.y;
-  double z = to_write.z;
-  double chessboardLength = MAX(abs(x), MAX(abs(y), abs(z)));
-  if (chessboardLength < 3.051944088384301E-5) {
-    return write_byte(packet_buffer, pos, max, 0);
-  } else {
-    long scale = ceil(chessboardLength);
-    uint8_t isPartial = (scale & 3L) != scale;
-    long markers = isPartial ? (scale & 3L) | 4L : scale;
-    long xn = pack(x / scale) << 3;
-    long yn = pack(y / scale) << 18;
-    long zn = pack(z / scale) << 33;
-    long buffer = markers | xn | yn | zn;
-    int error = write_byte(packet_buffer, pos, max, (int8_t)buffer);
-    if(error) return error;
-    error = write_byte(packet_buffer, pos, max, (int8_t)(buffer >> 8));
-    if(error) return error;
-    error = write_int(packet_buffer, pos, max,(int)(buffer >> 16));
-    if(error) return error;
-    if (isPartial) {
-      error = write_var_int(packet_buffer, pos, max, (int)(scale >> 2));
-      if(error) return error;
-    }
-    return 0;
-  }
-}
+
+
 
 
 int read_byte(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, int8_t *out) {
@@ -299,7 +240,50 @@ int read_uuid(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, uuid
   return error;
 }
 
+#define unpack(x) (MIN((long)x & (long)32767, 32766.0) * 2.0 / 32766.0 - 1.0)
+int read_lpvec3(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, lpvec3 *out) {
+  uint8_t lowest;
+  int error;
+  error = read_ubyte(packet_buffer, pos, max, &lowest);
+  if(error) return error;
+  if (lowest == 0) {
+    out->x = 0;
+    out->y = 0;
+    out->z = 0;
+    return 0;
+  } else {
+    uint8_t middle;
+    error = read_ubyte(packet_buffer, pos, max, &middle);
+    if(error) return error;
+    uint32_t highest;
+    error = read_uint(packet_buffer, pos, max, &highest);
+    if(error) return error;
+    long buffer = highest << 16 | middle << 8 | lowest;
+    long scale = lowest & 3;
+    if ((lowest & 4) == 4) {
+      int32_t input;
+      error = read_var_int(packet_buffer, pos, max, &input);
+      if(error) return error;
+      scale |= (input & 4294967295L) << 2;
+    }
+    out->x = unpack(buffer >> 3) * scale;
+    out->y = unpack(buffer >> 18) * scale;
+    out->z = unpack(buffer >> 33) * scale;
+    return 0;
+  }
+}
 
+int read_position(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, position *out) {
+  int64_t value;
+  int error = read_long(packet_buffer, pos, max, &value);
+  if(error) return error;
+  out->x = value >> 38;
+  out->y = value << 52 >> 52;
+  out->z = value << 26 >> 38;
+
+  
+  return 0;
+};
 
 // writers should go here
 int write_bool(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, uint8_t val) {
@@ -469,34 +453,37 @@ int write_double(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, d
 }
 
 int write_var_int(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, int32_t value) {
+  uint32_t x = value;
   if (*pos+1 > max)
     return ERR_TOO_FEW_BYTES;
   int error;
   while (1) {
-    if ((value & ~SEGMENT_BITS) == 0) {
-      error = write_byte(packet_buffer, pos, max, value);
+    
+    if ((x & ~SEGMENT_BITS) == 0) {
+      error = write_ubyte(packet_buffer, pos, max, x);
       return error;
     }
     
-    error = write_byte(packet_buffer, pos, max, (value & SEGMENT_BITS) | CONTINUE_BIT);
+    error = write_ubyte(packet_buffer, pos, max, (x & SEGMENT_BITS) | CONTINUE_BIT);
     if(error) return error;
-    value >>= 7;
+    x >>= 7;
   };
   
 }
 int write_var_long(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, int64_t value) {
+  uint64_t x = value;
   if (*pos+1 > max)
     return ERR_TOO_FEW_BYTES;
   int error;
   while (1) {
-    if ((value & ~((int64_t)SEGMENT_BITS)) == 0) {
-      error = write_byte(packet_buffer, pos, max, value);
+    if ((x & ~((int64_t)SEGMENT_BITS)) == 0) {
+      error = write_byte(packet_buffer, pos, max, x);
       return error;
     }
     
-    error = write_byte(packet_buffer, pos, max, (value & SEGMENT_BITS) | CONTINUE_BIT);
+    error = write_byte(packet_buffer, pos, max, (x & SEGMENT_BITS) | CONTINUE_BIT);
     if(error) return error;
-    value >>= 7;
+    x >>= 7;
   };
 }
 
@@ -521,7 +508,39 @@ int write_uuid(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, uui
   error = write_long(packet_buffer, pos, max, val.low);
   return error;
 }
-
+#define pack(x) (long)round((x * 0.5 + 0.5) * 32766.0)
+int write_lpvec3(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, lpvec3 to_write) {
+  double x = to_write.x;
+  double y = to_write.y;
+  double z = to_write.z;
+  double chessboardLength = MAX(abs(x), MAX(abs(y), abs(z)));
+  if (chessboardLength < 3.051944088384301E-5) {
+    return write_byte(packet_buffer, pos, max, 0);
+  } else {
+    long scale = ceil(chessboardLength);
+    uint8_t isPartial = (scale & 3L) != scale;
+    long markers = isPartial ? (scale & 3L) | 4L : scale;
+    long xn = pack(x / scale) << 3;
+    long yn = pack(y / scale) << 18;
+    long zn = pack(z / scale) << 33;
+    long buffer = markers | xn | yn | zn;
+    int error = write_byte(packet_buffer, pos, max, (int8_t)buffer);
+    if(error) return error;
+    error = write_byte(packet_buffer, pos, max, (int8_t)(buffer >> 8));
+    if(error) return error;
+    error = write_int(packet_buffer, pos, max,(int)(buffer >> 16));
+    if(error) return error;
+    if (isPartial) {
+      error = write_var_int(packet_buffer, pos, max, (int)(scale >> 2));
+      if(error) return error;
+    }
+    return 0;
+  }
+}
+int write_position(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, position value) {
+  int64_t val = (((int64_t)value.x & 0x3FFFFFF) << 38) | (((int64_t)value.z & 0x3FFFFFF) << 12) | ((int64_t)value.y & 0xFFF);
+  return write_long(packet_buffer, pos, max, val);
+};
 
 void print_bool(uint8_t val) {
   if(val)
@@ -530,9 +549,7 @@ void print_bool(uint8_t val) {
     printf("false");
 };
 
-void print_lpvec3(lpvec3 val) {
-  printf("[%lf, %lf, %lf]", val.x, val.y, val.z);
-}
+
 void print_byte(int8_t val) {
   printf("%d", val);
 };
@@ -669,3 +686,11 @@ void print_uuid(uuid value) {
   printf(" ");
   print_long(value.low);
 };
+
+void print_lpvec3(lpvec3 val) {
+  printf("[%lf, %lf, %lf]", val.x, val.y, val.z);
+}
+
+void print_position(position val) {
+  printf("[%d, %d, %d]", val.x, val.y, val.z);
+}

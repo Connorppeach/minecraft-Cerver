@@ -22,4 +22,8 @@ typedef struct {
   double x, y, z;
 } lpvec3;
 
+typedef struct {
+  int32_t x, y, z;
+} position;
+
 #endif

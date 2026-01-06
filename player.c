@@ -16,5 +16,7 @@ player *create_player(int fd) {
 
 void free_player(player *m_player) {
   close(m_player->conn.fd);
+  if(m_player->conn.backlog_len != 0)
+    free(m_player->conn.backlog);
   free(m_player);
 }

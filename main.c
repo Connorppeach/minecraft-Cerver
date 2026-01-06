@@ -1,3 +1,5 @@
+#include <errno.h>
+
 #include "rw.h"
 #include "util.h"
 #include "player.h"
@@ -12,20 +14,24 @@
 void teleport_player(simple_server *server, int player_num, double x, double y, double z);
 void send_game_event(simple_server *server, int player_num, uint8_t event, float value);
 void send_set_center_chunk(simple_server *server, int player_num, int32_t x, int32_t y);
-void send_chunks(simple_server *server, int player_num, int32_t x, int32_t z, int block_id);
-void send_chunks_maze(simple_server *server, int player_num, int32_t x, int32_t z, int block_id);
+void send_chunks(simple_server *server, int player_num, int32_t x, int32_t z);
+void send_chunks_maze(simple_server *server, int player_num, int32_t x, int32_t z);
 void send_spawn_entity(simple_server *server, int player_num, int32_t entity_id, uuid entity_uuid, int32_t type, double x, double y, double z, uint8_t pitch, uint8_t yaw, uint8_t head_yaw, int32_t data, uint16_t velocity_x, uint16_t velocity_y, uint16_t velocity_z);
 
 #define PORT 25545   // port we're listening on
 
 #define MAX_PLAYERS 10
 #define WRITE_BUF_SIZE 1310720
-#define WORLD_GEN_LIMIT 5
-
+#define CONSOLE_READ_BUF_SIZE 256
+char buffer[CONSOLE_READ_BUF_SIZE];
+#define WORLD_GEN_LIMIT 6
+int stdin_fd;
 uint8_t write_buf[WRITE_BUF_SIZE];
 int total_ticks = 0;
 
 void handle_packet_cb(simple_server *server, int player_num, int packet_type, uint8_t *packet_buf, unsigned int buf_len) {
+  player* m_player = server->players[player_num];
+  
   //printf("got packet %d\n", packet_type);
 }
 
@@ -51,17 +57,85 @@ void tick_callback(simple_server *server) {
     }
   }
   total_ticks++;
+
+  // read fron console
+  fd_set read_fds;
+  struct timeval tv;
+  int retval;
+
+  FD_ZERO(&read_fds);
+  FD_SET(stdin_fd, &read_fds);
+
+  tv.tv_sec = 0;
+  tv.tv_usec = 500;
+
+  retval = select(stdin_fd + 1, &read_fds, NULL, NULL, &tv);
+
+  if (retval == -1) {
+    perror("select()");
+  } else if (retval) {
+    if (fgets(buffer, CONSOLE_READ_BUF_SIZE, stdin) != NULL) {
+      if(strcmp(buffer, "stop"))
+	server->should_stop = true;
+    } else if (feof(stdin)) {
+      // todo -- do something
+    } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
+    }
+  } else {
+  }
+
 }
 
-void on_move_cb(simple_server *server, int player_num) {
+void on_move_cb(simple_server *server, int player_num, mc_location old_location, mc_location new_location) {
   player *m_player = server->players[player_num];
-  /* printf("username: %s\n  x: %lf\n  y: %lf\n  z: %lf\n  pitch: %f\n  yaw: %f\n", */
-  /* 	 m_player->username, */
-  /* 	 m_player->loc.x, */
-  /* 	 m_player->loc.y, */
-  /* 	 m_player->loc.z, */
-  /* 	 m_player->loc.pitch, */
-  /* 	 m_player->loc.yaw); */
+  uint8_t crossed_x_chunk_bound = ((int)new_location.x%16 == 0 && (int)old_location.x%16 != 0);
+  uint8_t crossed_z_chunk_bound = ((int)new_location.z%16 == 0 && (int)old_location.z%16 != 0);
+  if((old_location.x != new_location.x && old_location.z != new_location.z) && (crossed_x_chunk_bound || crossed_z_chunk_bound)) { // crossed a chunk boundry
+    //printf("more_than_16: %f, %f\n", old_location.z - new_location.z, old_location.x - new_location.x);
+    /* printf("username: %s\n  x: %lf\n  y: %lf\n  z: %lf\n  pitch: %f\n  yaw: %f\n  x: %lf\n  y: %lf\n  z: %lf\n  pitch: %f\n  yaw: %f\n", */
+    /* 	   m_player->username, */
+    /* 	   m_player->loc.x, */
+    /* 	   m_player->loc.y, */
+    /* 	   m_player->loc.z, */
+    /* 	   m_player->loc.pitch, */
+    /* 	   m_player->loc.yaw, */
+    /* 	   old_location.x, */
+    /* 	   old_location.y, */
+    /* 	   old_location.z, */
+    /* 	   old_location.pitch, */
+    /* 	   old_location.yaw) ;*/
+    int8_t direction[2] = {0, 0};
+    if(crossed_x_chunk_bound)
+      direction[0] = (new_location.x < old_location.x) ? -1 : 1;
+    if(crossed_z_chunk_bound)
+      direction[1] = (new_location.z < old_location.z) ? -1 : 1;
+
+    int new_chunk_x = (int)round(new_location.x/16);
+    int new_chunk_z = (int)round(new_location.z/16);
+    /* new_chunk_x += direction[0]+WORLD_GEN_LIMIT; */
+    /* new_chunk_z += direction[1]+WORLD_GEN_LIMIT; */
+    send_set_center_chunk(server, player_num, new_chunk_x, new_chunk_z);
+    int to_add_x = direction[0]*WORLD_GEN_LIMIT;
+    int final_x = new_chunk_x + to_add_x;
+
+    int to_add_z = direction[1]*WORLD_GEN_LIMIT;
+    int final_z = new_chunk_z + to_add_z;
+
+    /* if(final_x > 0) */
+    /*   final_x -= 1; */
+    /* if(final_z > 0) */
+    /*   final_z -= 1; */
+    for(int j = -1; j < 1; j++)
+      for(int i = -WORLD_GEN_LIMIT-1; i < WORLD_GEN_LIMIT+1; i++) {
+	if(direction[1] != 0)
+	  send_chunks(server, player_num, new_chunk_x+i, final_z-(j*direction[1]));
+	if(direction[0] != 0)
+	  send_chunks(server, player_num, final_x-(j*direction[0]), new_chunk_z+i);
+      }
+
+      //printf("%d, %d\n", final_x, final_z);
+  }
+  
 };
 
 void finish_configuration_cb(simple_server *server, int player_num) {
@@ -82,7 +156,7 @@ void finish_configuration_cb(simple_server *server, int player_num) {
   play.dimension_type = 0;
   play.dimension_name = lstr_static("minecraft:overworld");
   play.hashed_seed = 0;
-  play.game_mode = 2;
+  play.game_mode = 1;
   play.prev_game_mode = -1;
   play.is_debug = false;
   play.is_flat = false;
@@ -99,11 +173,10 @@ void finish_configuration_cb(simple_server *server, int player_num) {
 
   send_game_event(server, player_num, 13, 0.0);
   send_set_center_chunk(server, player_num, 0, 0);
-  int block_id = 1;
-  for(int x = -WORLD_GEN_LIMIT; x < WORLD_GEN_LIMIT; x++)
-    for(int y = -WORLD_GEN_LIMIT; y < WORLD_GEN_LIMIT; y++)
-      send_chunks_maze(server, player_num, x, y, block_id);
-  teleport_player(server, player_num, -17.5, 1, 18.5);
+  for(int x = -WORLD_GEN_LIMIT-1; x < WORLD_GEN_LIMIT+1; x++)
+    for(int y = -WORLD_GEN_LIMIT-1; y < WORLD_GEN_LIMIT+1; y++)
+      send_chunks(server, player_num, x, y);
+  teleport_player(server, player_num, 8.5, 40, 8.5);
 
   uuid rand_uuid; // funny trick
   send_spawn_entity(server, player_num, 1, rand_uuid, 4, -18, 1, -2, 0, 0, 192, 0, 0, 0, 0);
@@ -111,8 +184,12 @@ void finish_configuration_cb(simple_server *server, int player_num) {
 
 int main(void)
 {
+  stdin_fd = fileno(stdin); // Get file descriptor for stdin
+  fcntl(stdin_fd, F_SETFL, fcntl(stdin_fd, F_GETFL) | O_NONBLOCK);
   simple_server *server =  allocate_simple_server(MAX_PLAYERS);
+  puts("starting server");
   start_server(server, PORT, (simple_server_callback){ handle_packet_cb, tick_callback, finish_configuration_cb, on_move_cb });
+  fcntl(stdin_fd, F_SETFL, fcntl(stdin_fd, F_GETFL) & ~O_NONBLOCK);
 }
 
 // utility senders
@@ -179,14 +256,16 @@ void send_set_center_chunk(simple_server *server, int player_num, int32_t x, int
   uint32_t max = 0;
   
   write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, SET_CENTER_CHUNK_ID);
-  write_set_center_chunk(&packet_ptr, &max, WRITE_BUF_SIZE, packet);
+  int error = write_set_center_chunk(&packet_ptr, &max, WRITE_BUF_SIZE, packet);
   send_packet(write_buf, max, server->players[player_num]->conn.fd);
+  if(error)
+    printf("error setting center chunk: %d\n", error);
 }
 
 
 // send basic world data
 #define MAX_CHUNK_SIZE 1310720
-void send_chunks(simple_server *server, int player_num, int32_t x, int32_t z, int block_id) {
+void send_chunks(simple_server *server, int player_num, int32_t x, int32_t z) {
   chunk_data_and_update_light packet;
   packet.heightmap_count = 0;
   packet.block_entities_count = 0;
@@ -253,8 +332,6 @@ void send_chunks(simple_server *server, int player_num, int32_t x, int32_t z, in
   
   for(int i = 0; i < 24; i++) {
     // write chunk data to our array
-    if(x+1 != WORLD_GEN_LIMIT && z+1 != WORLD_GEN_LIMIT &&
-       x != -WORLD_GEN_LIMIT && z != -WORLD_GEN_LIMIT)
       for(int local_y = 0; local_y < 16; local_y++) {
 	float block_y = (i*16)+local_y;
 	for(int local_z = 0; local_z < 16; local_z++) {
@@ -288,12 +365,7 @@ void send_chunks(simple_server *server, int player_num, int32_t x, int32_t z, in
 	  }
 	}
       }
-    else {
-      section.block_states.format = 0;
-      section.block_states.bits_per_entry = 0;
-      section.block_states.value = 0;
 
-    }
       
     
     
@@ -317,7 +389,7 @@ void send_chunks(simple_server *server, int player_num, int32_t x, int32_t z, in
 
  
 
-void send_chunks_maze(simple_server *server, int player_num, int32_t x, int32_t z, int block_id) {
+void send_chunks_maze(simple_server *server, int player_num, int32_t x, int32_t z) {
   chunk_data_and_update_light packet;
   packet.heightmap_count = 0;
   packet.block_entities_count = 0;
@@ -379,39 +451,31 @@ void send_chunks_maze(simple_server *server, int player_num, int32_t x, int32_t 
   ++height;
   for(int i = 0; i < 24; i++) {
     // write chunk data to our array
-    if(x+1 != WORLD_GEN_LIMIT && z+1 != WORLD_GEN_LIMIT &&
-       x != -WORLD_GEN_LIMIT && z != -WORLD_GEN_LIMIT)
-      for(int local_y = 0; local_y < 16; local_y++) {
-	int block_y = (i*16)+local_y;
-	for(int local_z = 0; local_z < 16; local_z++) {
-	  int block_z = (z*16)+local_z;
-	  for(int local_x = 0; local_x < 16; local_x++) {
-	    int block_x = (x*16)+local_x;
+    for(int local_y = 0; local_y < 16; local_y++) {
+      int block_y = (i*16)+local_y;
+      for(int local_z = 0; local_z < 16; local_z++) {
+	int block_z = (z*16)+local_z;
+	for(int local_x = 0; local_x < 16; local_x++) {
+	  int block_x = (x*16)+local_x;
 
-	    int idx = (local_y*16*16)+(local_z*16)+local_x;
+	  int idx = (local_y*16*16)+(local_z*16)+local_x;
 #define NOISE_DEC 0.2
 #define NOISE_DEC_2 2
-	    int is_filled = buffer[mazelib_get_cell_index ( ((block_x/2)+48/2)%width, ((block_z/2)+48/2)%height, height )];
-	    if(block_y < 1)
-	      section.block_states.data[idx] = 9;
-	    else if(abs(block_x) > 48 || abs(block_z) > 48)
-	      section.block_states.data[idx] = 0;
-	    else if(is_filled && block_y < 3) {
-	      //section.block_states.data[idx] = 1;
-	      //printf("%f\n", noise1);
-		section.block_states.data[idx] = 1;
+	  int is_filled = buffer[mazelib_get_cell_index ( ((block_x/2)+48/2)%width, ((block_z/2)+48/2)%height, height )];
+	  if(block_y < 1)
+	    section.block_states.data[idx] = 9;
+	  else if(abs(block_x) > 48 || abs(block_z) > 48)
+	    section.block_states.data[idx] = 0;
+	  else if(is_filled && block_y < 3) {
+	    //section.block_states.data[idx] = 1;
+	    //printf("%f\n", noise1);
+	    section.block_states.data[idx] = 1;
 	      
-	    } else
-	      section.block_states.data[idx] = 0;
+	  } else
+	    section.block_states.data[idx] = 0;
 
-	  }
 	}
       }
-    else {
-      section.block_states.format = 0;
-      section.block_states.bits_per_entry = 0;
-      section.block_states.value = 1;
-
     }
       
     

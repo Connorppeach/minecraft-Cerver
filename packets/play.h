@@ -182,6 +182,29 @@ PACKET(login_play,
        R(bool, uint8_t, is_debug);
        R(bool, uint8_t, is_flat);
        R(bool, uint8_t, has_death_location);
+#if defined(PACKET_READ_IMPL)
+       if(out->has_death_location) {
+	 error = write_var_str(packet_buffer, pos, max, out->death_dimension_name);
+	 if(error) return error;
+	 error = write_position(packet_buffer, pos, max, out->death_location);
+	 if(error) return error;
+       }
+#elif defined(PACKET_WRITE_IMPL)
+       if(out.has_death_location) {
+	 error = read_var_str(packet_buffer, pos, max, &out.death_dimension_name);
+	 if(error) return error;
+	 error = read_position(packet_buffer, pos, max, &out.death_location);
+	 if(error) return error;
+       }
+#elif defined(PACKET_PRINT_IMPL)
+       if(out.has_death_location) {
+	 print_var_str(out.death_dimension_name);
+	 print_position(out.death_location);
+       }
+#else
+       lstr death_dimension_name;
+       position death_location;
+#endif
        R(var_int, int32_t, portal_cooldown);
        R(var_int, int32_t, sea_level);
        R(bool, uint8_t, enforces_secure_chat);

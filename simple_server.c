@@ -10,6 +10,8 @@ simple_server* allocate_simple_server(int max_players) {
     server->player_slots[i] = 0;
   }
   server->max_players = max_players;
+  server->should_stop = false;
+  server->world_data.world_height = 384;// default
   return server;
 }
 
@@ -50,7 +52,7 @@ int handle_player_packet(simple_server *server, int player_num, uint8_t *packet_
   if(error) {
     printf("error in client: %d\n", error);
     deallocate_player(server, player_num);
-    return pos;
+    return 1;
   }
   // make a copy of the packet(remember to free if you return)
   uint8_t *raw_data = malloc(buf_len*sizeof(uint8_t));
@@ -74,7 +76,7 @@ int handle_player_packet(simple_server *server, int player_num, uint8_t *packet_
       printf("error reading intent: %d\n", error);
       deallocate_player(server, player_num);
       free(raw_data);
-      return pos;
+      return 1;
     }
     
     m_player->conn.connection_state = shake.intent;
@@ -262,7 +264,7 @@ int handle_player_packet(simple_server *server, int player_num, uint8_t *packet_
 	  nbt_set_tag_name(min_y, "min_y", strlen("min_y"));
 	  nbt_tag_compound_append(overworld, min_y);
 	  
-	  nbt_tag_t* height = nbt_new_tag_int(384);
+	  nbt_tag_t* height = nbt_new_tag_int(server->world_data.world_height);
 	  nbt_set_tag_name(height, "height", strlen("height"));
 	  nbt_tag_compound_append(overworld, height);
 
@@ -745,26 +747,32 @@ int handle_player_packet(simple_server *server, int player_num, uint8_t *packet_
   } else if  (m_player->conn.connection_state == 4) { // play
     if (packet_type == SET_PLAYER_POSITION_ID) {
       set_player_position packet;
+      mc_location old_loc = m_player->loc;
       read_set_player_position(&buf_ptr, &pos, buf_len, &packet);
       m_player->loc.x = packet.x;
       m_player->loc.y = packet.y;
       m_player->loc.z = packet.z;
-      cb.on_move(server, player_num);
+      if(cb.on_move)
+	cb.on_move(server, player_num, old_loc, m_player->loc);
     } else if(packet_type == SET_PLAYER_POSITION_AND_ROTATION_ID) {
       set_player_position_and_rotation packet;
+      mc_location old_loc = m_player->loc;
       read_set_player_position_and_rotation(&buf_ptr, &pos, buf_len, &packet);
       m_player->loc.x = packet.x;
       m_player->loc.y = packet.y;
       m_player->loc.z = packet.z;
       m_player->loc.yaw = packet.yaw;
       m_player->loc.pitch = packet.pitch;
-      cb.on_move(server, player_num);
+      if(cb.on_move)
+	cb.on_move(server, player_num, old_loc, m_player->loc);
     } else if(packet_type == SET_PLAYER_ROTATION_ID) {
       set_player_rotation packet;
+      mc_location old_loc = m_player->loc;
       read_set_player_rotation(&buf_ptr, &pos, buf_len, &packet);
       m_player->loc.yaw = packet.yaw;
       m_player->loc.pitch = packet.pitch;
-      cb.on_move(server, player_num);
+      if(cb.on_move)
+	cb.on_move(server, player_num, old_loc, m_player->loc);
     }
 
   }
@@ -772,11 +780,34 @@ int handle_player_packet(simple_server *server, int player_num, uint8_t *packet_
   cb.packet_callback(server, player_num, packet_type, buf_ptr, buf_len);
   
   free(raw_data);
-  return pos;
+  return 0;
 }
 
 void handle_packet(simple_server *server, int player_num, uint8_t *buf, int nbytes, simple_server_callback cb) {
-  uint8_t *read_buf = buf;
+  player *m_player = server->players[player_num];
+  uint8_t *read_buf;
+  uint8_t *read_buf_original;
+  if (m_player->conn.backlog != NULL) {
+    int total_bytes = (nbytes*sizeof(uint8_t))+(m_player->conn.backlog_len*sizeof(uint8_t));
+    read_buf_original = malloc(total_bytes);
+    read_buf = read_buf_original;
+    int i2=0;
+    for(int i = 0; i < total_bytes; i++) {
+      if(i < m_player->conn.backlog_len)
+	read_buf[i] = m_player->conn.backlog[i];
+      else {
+	read_buf[i] = buf[i2];
+	i2++;
+      }
+    }
+    nbytes = total_bytes;
+  } else {
+    int total_bytes = (nbytes*sizeof(uint8_t));
+    read_buf_original = malloc(total_bytes); // no backlog
+    read_buf = read_buf_original;
+    for(int i = 0; i < total_bytes; i++)
+      read_buf[i] = buf[i];
+  }
   uint32_t pos = 0;
   int packet_len;
 		      
@@ -786,27 +817,36 @@ void handle_packet(simple_server *server, int player_num, uint8_t *buf, int nbyt
     deallocate_player(server, player_num);
     return;
   }
-  uint32_t remaining_data = nbytes-(read_buf - buf); 
+  uint32_t remaining_data = nbytes-(read_buf - buf);
 
 
   if (remaining_data < packet_len) {
     printf("error: too little data supplied\ndata remaining after read: %d\n", remaining_data);// todo -- append to backlog
     printf("data needed to read more: %d\n", packet_len);
+    m_player->conn.backlog_len = nbytes;
+    m_player->conn.backlog = read_buf;
+    
     deallocate_player(server, player_num);
+    //if(read_buf_2) free(read_buf_2);
     return;
   }
   int left = nbytes-packet_len-1;
-  uint8_t more = left!=0;
+  uint8_t more = left>0;
   uint8_t *left_off = read_buf+packet_len;
-  handle_player_packet(server, player_num, read_buf, packet_len, cb);
+  error = handle_player_packet(server, player_num, read_buf, packet_len, cb);
+  if(error) {
+    free(read_buf_original);
+    return;
+  }
   if (more) {
     /* printf("error: too much data supplied\ndata left: %d\n", remaining_data); */
     /* printf("data we haves len: %d\n", packet_len); */
     /* deallocate_player(player_num) */;
     //printf("more\n");
     handle_packet(server, player_num, left_off, left, cb);
-    return;
-  }
+  } else
+    free(read_buf_original);
+
 }
 
 
@@ -817,7 +857,7 @@ int start_server(simple_server *server, int port, simple_server_callback cb)
   int fdmax;        // maximum file descriptor number
   int listener;     // listening socket descriptor
   int yes=1;        // for setsockopt() SO_REUSEADDR, below
-
+  server->should_stop = false;
   FD_ZERO(&server->master);    // clear the master and temp sets
 
   // get the listener
@@ -862,6 +902,8 @@ int start_server(simple_server *server, int port, simple_server_callback cb)
     
   // Main loop
   for(;;) {
+    if(server->should_stop)
+      break;
     fd_set read_fds; // temp file descriptor list for select()
     FD_ZERO(&read_fds);
       
