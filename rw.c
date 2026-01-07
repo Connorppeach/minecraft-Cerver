@@ -542,7 +542,7 @@ int write_position(uint8_t **packet_buffer, unsigned int *pos, unsigned int max,
   return write_long(packet_buffer, pos, max, val);
 };
 
-void print_bool(uint8_t val) {
+void print_bool(uint8_t val, int indentation) {
   if(val)
     printf("true");
   else
@@ -550,7 +550,7 @@ void print_bool(uint8_t val) {
 };
 
 
-void print_byte(int8_t val) {
+void print_byte(int8_t val, int indentation) {
   printf("%d", val);
 };
 void print_nbt_tree(nbt_tag_t* tag, int indentation) {
@@ -641,56 +641,58 @@ void print_nbt_tree(nbt_tag_t* tag, int indentation) {
   printf("\n");
 }
 
-void print_nbt(nbt_tag_t *val) {
-  print_nbt_tree(val, 0);
+void print_nbt(nbt_tag_t *val, int indentation) {
+  puts("");
+  print_nbt_tree(val, indentation);
 }
-void print_network_nbt(nbt_tag_t *val) {
-  print_nbt_tree(val, 0);
+void print_network_nbt(nbt_tag_t *val, int indentation) {
+  puts("");
+  print_nbt_tree(val, indentation);
 }
 
-void print_ubyte(uint8_t val) {
+void print_ubyte(uint8_t val, int indentation) {
   printf("%hhu", val);
 };
-void print_short(int16_t val) {
+void print_short(int16_t val, int indentation) {
   printf("%hd", val);
 };
-void print_ushort(uint16_t val) {
+void print_ushort(uint16_t val, int indentation) {
   printf("%hu", val);
 };
-void print_int(int32_t val) {
+void print_int(int32_t val, int indentation) {
   printf("%d", val);
 };
-void print_uint(uint32_t val) {
+void print_uint(uint32_t val, int indentation) {
   printf("%d", val);
 };
-void print_long(int64_t val) {
+void print_long(int64_t val, int indentation) {
   printf("%ld", val);
 };
-void print_float(float val_float) {
+void print_float(float val_float, int indentation) {
   printf("%g", val_float);
 };
-void print_double(double val_double) {
+void print_double(double val_double, int indentation) {
   printf("%g", val_double);
 };
-void print_var_int(int32_t value) {
-  print_int(value);
+void print_var_int(int32_t value, int indentation) {
+  print_int(value, indentation);
 };
-void print_var_long(int64_t value) {
-  print_long(value);
+void print_var_long(int64_t value, int indentation) {
+  print_long(value, indentation);
 };
-void print_var_str(lstr value) {
+void print_var_str(lstr value, int indentation) {
   printf("%.*s", value.len, value.str);
 };
-void print_uuid(uuid value) {
-  print_long(value.high);
+void print_uuid(uuid value, int indentation) {
+  print_long(value.high, indentation);
   printf(" ");
-  print_long(value.low);
+  print_long(value.low, indentation);
 };
 
-void print_lpvec3(lpvec3 val) {
+void print_lpvec3(lpvec3 val, int indentation) {
   printf("[%lf, %lf, %lf]", val.x, val.y, val.z);
 }
 
-void print_position(position val) {
+void print_position(position val, int indentation) {
   printf("[%d, %d, %d]", val.x, val.y, val.z);
 }

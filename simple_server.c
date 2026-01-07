@@ -28,11 +28,13 @@ int allocate_player(simple_server *server, int fd) {
   return -1;
 }
 void deallocate_player(simple_server *server, int player_id) {
-  puts("deallocating player");
-  FD_CLR(server->players[player_id]->conn.fd, &server->master); // remove from master set
-  free_player(server->players[player_id]);
-  server->players[player_id] = NULL;
-  server->player_slots[player_id] = 0;
+  if(server->player_slots[player_id]) {
+    puts("deallocating player");
+    FD_CLR(server->players[player_id]->conn.fd, &server->master); // remove from master set
+    free_player(server->players[player_id]);
+    server->players[player_id] = NULL;
+    server->player_slots[player_id] = 0;
+  }
 }
 
 
@@ -45,7 +47,9 @@ void deallocate_player(simple_server *server, int player_id) {
 #define WRITE_BUF_SIZE 1024
 int handle_player_packet(simple_server *server, int player_num, uint8_t *packet_buf, unsigned int buf_len, simple_server_callback cb) {
   if(!server->player_slots[player_num])
-    return 0;
+    return 1;
+
+  
   int packet_type;
   unsigned int pos = 0;
   int error = read_var_int(&packet_buf, &pos, buf_len, &packet_type);
@@ -54,6 +58,8 @@ int handle_player_packet(simple_server *server, int player_num, uint8_t *packet_
     deallocate_player(server, player_num);
     return 1;
   }
+  cb.packet_callback(server, player_num, packet_type, packet_buf, buf_len);
+
   // make a copy of the packet(remember to free if you return)
   uint8_t *raw_data = malloc(buf_len*sizeof(uint8_t));
   uint8_t *buf_ptr = raw_data;
@@ -111,7 +117,7 @@ int handle_player_packet(simple_server *server, int player_num, uint8_t *packet_
       m_player->conn.connection_state = 3;
       uint8_t *packet_ptr = write_buf+4;
       write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, CLIENTBOUND_KNOWN_PACKS_ID);
-      known_pack packs[] = { (known_pack){lstr_static("minecraft"), lstr_static("core"), lstr_static("1.21.8")} };
+      known_pack packs[] = { (known_pack){lstr_static("minecraft"), lstr_static("core"), lstr_static("1.21.11")} };
       write_clientbound_known_packs(&packet_ptr, &max, WRITE_BUF_SIZE, (clientbound_known_packs){packs, 1});
       //print_clientbound_known_packs((clientbound_known_packs){packs, 1});
       send_packet(write_buf, max, m_player->conn.fd);
@@ -777,22 +783,23 @@ int handle_player_packet(simple_server *server, int player_num, uint8_t *packet_
 
   }
     
-  cb.packet_callback(server, player_num, packet_type, buf_ptr, buf_len);
   
   free(raw_data);
   return 0;
 }
 
 void handle_packet(simple_server *server, int player_num, uint8_t *buf, int nbytes, simple_server_callback cb) {
+  //puts("new packet");
   player *m_player = server->players[player_num];
   uint8_t *read_buf;
   uint8_t *read_buf_original;
   if (m_player->conn.backlog != NULL) {
-    int total_bytes = (nbytes*sizeof(uint8_t))+(m_player->conn.backlog_len*sizeof(uint8_t));
-    read_buf_original = malloc(total_bytes);
+    int total_bytes = nbytes+m_player->conn.backlog_len;
+    read_buf_original = malloc(total_bytes+1);
     read_buf = read_buf_original;
     int i2=0;
     for(int i = 0; i < total_bytes; i++) {
+      
       if(i < m_player->conn.backlog_len)
 	read_buf[i] = m_player->conn.backlog[i];
       else {
@@ -802,11 +809,11 @@ void handle_packet(simple_server *server, int player_num, uint8_t *buf, int nbyt
     }
     nbytes = total_bytes;
   } else {
-    int total_bytes = (nbytes*sizeof(uint8_t));
-    read_buf_original = malloc(total_bytes); // no backlog
+    int total_bytes = nbytes;
+    read_buf_original = malloc(total_bytes+1); // no backlog
     read_buf = read_buf_original;
     for(int i = 0; i < total_bytes; i++)
-      read_buf[i] = buf[i];
+      read_buf_original[i] = buf[i];
   }
   uint32_t pos = 0;
   int packet_len;
@@ -817,35 +824,50 @@ void handle_packet(simple_server *server, int player_num, uint8_t *buf, int nbyt
     deallocate_player(server, player_num);
     return;
   }
-  uint32_t remaining_data = nbytes-(read_buf - buf);
+  uint32_t remaining_data = nbytes-pos;
 
 
   if (remaining_data < packet_len) {
-    printf("error: too little data supplied\ndata remaining after read: %d\n", remaining_data);// todo -- append to backlog
-    printf("data needed to read more: %d\n", packet_len);
+    /* printf("error: too little data supplied\ndata remaining after read: %d\n", remaining_data);// todo -- append to backlog */
+    /* printf("data needed to read more: %d\n", packet_len); */
+    /* printf("we have: %d\n", nbytes); */
+    if (m_player->conn.backlog != NULL)
+      free(m_player->conn.backlog);
     m_player->conn.backlog_len = nbytes;
-    m_player->conn.backlog = read_buf;
-    
-    deallocate_player(server, player_num);
+    m_player->conn.backlog = malloc(nbytes);
+    for(int i = 0; i < nbytes; i++)
+      m_player->conn.backlog[i] = read_buf_original[i];
+    free(read_buf_original);
+    //deallocate_player(server, player_num);
     //if(read_buf_2) free(read_buf_2);
     return;
   }
   int left = nbytes-packet_len-1;
   uint8_t more = left>0;
   uint8_t *left_off = read_buf+packet_len;
+  //printf("packet len: %d\nleft: %d\n", packet_len, left);
   error = handle_player_packet(server, player_num, read_buf, packet_len, cb);
-  if(error) {
-    free(read_buf_original);
+  if (error) {
+
+    free(read_buf_original); // done, at last
+    deallocate_player(server, player_num);
     return;
   }
   if (more) {
     /* printf("error: too much data supplied\ndata left: %d\n", remaining_data); */
-    /* printf("data we haves len: %d\n", packet_len); */
+    /* printf("data left: %d\n", left); */
     /* deallocate_player(player_num) */;
     //printf("more\n");
     handle_packet(server, player_num, left_off, left, cb);
-  } else
-    free(read_buf_original);
+  } else {
+    if (m_player->conn.backlog != NULL) {
+	free(m_player->conn.backlog);
+	m_player->conn.backlog = NULL;
+	m_player->conn.backlog_len = 0;
+    }
+
+  }
+  free(read_buf_original);
 
 }
 
@@ -996,6 +1018,7 @@ int start_server(simple_server *server, int port, simple_server_callback cb)
 	    if (nbytes == 0) {
 	      // connection closed
 	      printf("server: socket %d hung up\n", i);
+	      
 	    } else {
 	      perror("recv");
 	    }

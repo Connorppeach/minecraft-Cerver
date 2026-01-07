@@ -15,7 +15,7 @@ int sendall(int sockfd, const uint8_t *buf, size_t len) {
     int n;
 
     while (total < len) {
-        n = send(sockfd, buf + total, bytesleft, 0);
+        n = send(sockfd, buf + total, bytesleft, MSG_NOSIGNAL);
         if (n == -1) {
             // handle errors here, e.g., EAGAIN or EWOULDBLOCK for non-blocking sockets
             break; 
@@ -45,3 +45,5 @@ void send_packet(uint8_t *packet_buf, int packet_len, int fd) {
   /* printf("header_len %d, packet_len %d, total_len %d, sent %d\n",  */
   /*        header_len, packet_len, total_len, sent); */
 }
+
+

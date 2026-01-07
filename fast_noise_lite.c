@@ -1,2 +1,2 @@
 #define FNL_IMPL
-#include "FastNoiseLite.h"
+#include "include/FastNoiseLite.h"

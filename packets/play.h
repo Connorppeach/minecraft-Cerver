@@ -198,8 +198,8 @@ PACKET(login_play,
        }
 #elif defined(PACKET_PRINT_IMPL)
        if(out.has_death_location) {
-	 print_var_str(out.death_dimension_name);
-	 print_position(out.death_location);
+	 print_var_str(out.death_dimension_name, indentation);
+	 print_position(out.death_location, indentation);
        }
 #else
        lstr death_dimension_name;

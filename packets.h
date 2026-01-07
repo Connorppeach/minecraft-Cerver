@@ -94,21 +94,27 @@
 #elif defined(PACKET_PRINT_IMPL)
 
 #define PACKET(name, ...)						\
-  void print_##name (name out) {					\
+  void print_##name (name out, int indentation) {			\
     puts(#name);							\
     __VA_ARGS__								\
       puts("");								\
   }
 
 #define R(type, field_type, field_name)					\
+  for (int j = 0; j < indentation+2; j++) {				\
+    printf(" ");							\
+  }									\
   printf("%s[%s]: ", #field_name, #type);				\
-  print_##type(out.field_name);						\
+  print_##type(out.field_name, indentation+2);				\
   puts("");
 
 #define O(type, field_type, field_name)					\
+  for (int j = 0; j < indentation+2; j++) {				\
+    printf(" ");							\
+  }									\
   printf("%s[%s](O): ", #field_name, #type);				\
   if(out.field_name != NULL)						\
-    print_##type(*out.field_name);					\
+    print_##type(*out.field_name, indentation+2);			\
   else									\
     printf("N/A");							\
   puts("");
@@ -116,8 +122,11 @@
 
 #define RL(type, field_type, field_name, len_field_name)		\
   for (int i = 0; i < out.len_field_name; i++) {			\
-    print_##type(out.field_name[i]);					\
-  }									
+    for (int j = 0; j < indentation+2; j++) {				\
+      printf(" ");							\
+    }									\
+    print_##type(out.field_name[i], indentation+2);			\
+  }									\
 
 
 
@@ -129,7 +138,7 @@
   } name;								\
   int read_##name (uint8_t **packet_buffer, unsigned int *pos, unsigned int max, name *out); \
   int write_##name (uint8_t **packet_buffer, unsigned int *pos, unsigned int max, name out); \
-  void print_##name (name out); 
+  void print_##name (name out, int indentation); 
 #define R(type, field_type, field_name)		\
   field_type field_name
 

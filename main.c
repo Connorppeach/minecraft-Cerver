@@ -1,15 +1,17 @@
 #include <errno.h>
 
 #include "rw.h"
+#include "blocks.h"
 #include "util.h"
 #include "player.h"
 #include "packets.h"
 #include "simple_server.h"
 
 #define MAZELIB_IMPLEMENTATION
-#include "mazelib.h"
+#include "include/mazelib.h"
+#include "include/komihash.h"
 
-#include "FastNoiseLite.h"
+#include "include/FastNoiseLite.h"
 
 void teleport_player(simple_server *server, int player_num, double x, double y, double z);
 void send_game_event(simple_server *server, int player_num, uint8_t event, float value);
@@ -19,24 +21,74 @@ void send_chunks_maze(simple_server *server, int player_num, int32_t x, int32_t 
 void send_spawn_entity(simple_server *server, int player_num, int32_t entity_id, uuid entity_uuid, int32_t type, double x, double y, double z, uint8_t pitch, uint8_t yaw, uint8_t head_yaw, int32_t data, uint16_t velocity_x, uint16_t velocity_y, uint16_t velocity_z);
 
 #define PORT 25545   // port we're listening on
-
-#define MAX_PLAYERS 10
 #define WRITE_BUF_SIZE 1310720
 #define CONSOLE_READ_BUF_SIZE 256
-char buffer[CONSOLE_READ_BUF_SIZE];
+
+// settings
+#define MAX_PLAYERS 10
 #define WORLD_GEN_LIMIT 6
+
+// world gen settings
+// cave settings
+#define CAVE_SCALE 0.2
+#define CAVE_CENTER 40
+#define CAVE_BOOST_AT_CENTER 0.8
+// heightmap settings
+#define HEIGHTMAP_INITIAL_HEIGHT_MAX 32
+#define HEIGHTMAP_XZ_SCALE 2
+#define HEIGHTMAP_XZ_MULT_SCALE 128
+#define HEIGHTMAP_Y_ADD 60
+
+#define BIOME_SCALE 1024
+
+
+char buffer[CONSOLE_READ_BUF_SIZE];
 int stdin_fd;
 uint8_t write_buf[WRITE_BUF_SIZE];
 int total_ticks = 0;
 
 void handle_packet_cb(simple_server *server, int player_num, int packet_type, uint8_t *packet_buf, unsigned int buf_len) {
   player* m_player = server->players[player_num];
-  
+  uint32_t pos = 0;
+  if(packet_type == SERVERBOUND_KNOWN_PACKS_CONFIGURATION_ID) {
+    /* serverbound_known_packs packet; */
+    /* read_serverbound_known_packs(&packet_buf, &pos, buf_len, &packet); */
+    /* print_serverbound_known_packs(packet, 0) */;
+  }
   //printf("got packet %d\n", packet_type);
 }
+void read_console_command(simple_server *server) {
+  fd_set read_fds;
+  struct timeval tv;
+  int retval;
+
+  FD_ZERO(&read_fds);
+  FD_SET(stdin_fd, &read_fds);
+
+  tv.tv_sec = 0;
+  tv.tv_usec = 500;
+  fflush(stdout);
+  retval = select(stdin_fd + 1, &read_fds, NULL, NULL, &tv);
+
+  if (retval == -1) {
+    perror("select()");
+  } else if (retval) {
+    if (fgets(buffer, CONSOLE_READ_BUF_SIZE, stdin) != NULL) {
+      if(strcmp(buffer, "stop\n") == 0)
+	server->should_stop = true;
+      else if(strcmp(buffer, "minehut\n") == 0)
+	freopen("log.txt", "a", stdout);
+
+    } else if (feof(stdin)) {
+      // todo -- do something
+    } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
+    }
+  } 
+}
+
 
 void tick_callback(simple_server *server) {
-  for(int i = 0; i < server->max_players; i++) {
+  for (int i = 0; i < server->max_players; i++) {
     if (server->player_slots[i]) {
       player* m_player = server->players[i];
       if(m_player->conn.connection_state == 4) {
@@ -59,51 +111,29 @@ void tick_callback(simple_server *server) {
   total_ticks++;
 
   // read fron console
-  fd_set read_fds;
-  struct timeval tv;
-  int retval;
-
-  FD_ZERO(&read_fds);
-  FD_SET(stdin_fd, &read_fds);
-
-  tv.tv_sec = 0;
-  tv.tv_usec = 500;
-
-  retval = select(stdin_fd + 1, &read_fds, NULL, NULL, &tv);
-
-  if (retval == -1) {
-    perror("select()");
-  } else if (retval) {
-    if (fgets(buffer, CONSOLE_READ_BUF_SIZE, stdin) != NULL) {
-      if(strcmp(buffer, "stop"))
-	server->should_stop = true;
-    } else if (feof(stdin)) {
-      // todo -- do something
-    } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
-    }
-  } else {
-  }
+  read_console_command(server);
 
 }
 
 void on_move_cb(simple_server *server, int player_num, mc_location old_location, mc_location new_location) {
-  player *m_player = server->players[player_num];
+  //player *m_player = server->players[player_num];
   uint8_t crossed_x_chunk_bound = ((int)new_location.x%16 == 0 && (int)old_location.x%16 != 0);
   uint8_t crossed_z_chunk_bound = ((int)new_location.z%16 == 0 && (int)old_location.z%16 != 0);
+  /* printf("username: %s\n  x: %lf\n  y: %lf\n  z: %lf\n  pitch: %f\n  yaw: %f\n  x: %lf\n  y: %lf\n  z: %lf\n  pitch: %f\n  yaw: %f\n", */
+  /* 	   m_player->username, */
+  /* 	   m_player->loc.x, */
+  /* 	   m_player->loc.y, */
+  /* 	   m_player->loc.z, */
+  /* 	   m_player->loc.pitch, */
+  /* 	   m_player->loc.yaw, */
+  /* 	   old_location.x, */
+  /* 	   old_location.y, */
+  /* 	   old_location.z, */
+  /* 	   old_location.pitch, */
+  /* 	   old_location.yaw) */ ;
+
   if((old_location.x != new_location.x && old_location.z != new_location.z) && (crossed_x_chunk_bound || crossed_z_chunk_bound)) { // crossed a chunk boundry
     //printf("more_than_16: %f, %f\n", old_location.z - new_location.z, old_location.x - new_location.x);
-    /* printf("username: %s\n  x: %lf\n  y: %lf\n  z: %lf\n  pitch: %f\n  yaw: %f\n  x: %lf\n  y: %lf\n  z: %lf\n  pitch: %f\n  yaw: %f\n", */
-    /* 	   m_player->username, */
-    /* 	   m_player->loc.x, */
-    /* 	   m_player->loc.y, */
-    /* 	   m_player->loc.z, */
-    /* 	   m_player->loc.pitch, */
-    /* 	   m_player->loc.yaw, */
-    /* 	   old_location.x, */
-    /* 	   old_location.y, */
-    /* 	   old_location.z, */
-    /* 	   old_location.pitch, */
-    /* 	   old_location.yaw) ;*/
     int8_t direction[2] = {0, 0};
     if(crossed_x_chunk_bound)
       direction[0] = (new_location.x < old_location.x) ? -1 : 1;
@@ -173,13 +203,14 @@ void finish_configuration_cb(simple_server *server, int player_num) {
 
   send_game_event(server, player_num, 13, 0.0);
   send_set_center_chunk(server, player_num, 0, 0);
+  teleport_player(server, player_num, 8.5, 70, 8.5);
   for(int x = -WORLD_GEN_LIMIT-1; x < WORLD_GEN_LIMIT+1; x++)
     for(int y = -WORLD_GEN_LIMIT-1; y < WORLD_GEN_LIMIT+1; y++)
       send_chunks(server, player_num, x, y);
-  teleport_player(server, player_num, 8.5, 40, 8.5);
+  teleport_player(server, player_num, 8.5, 70, 8.5);
 
-  uuid rand_uuid; // funny trick
-  send_spawn_entity(server, player_num, 1, rand_uuid, 4, -18, 1, -2, 0, 0, 192, 0, 0, 0, 0);
+  //uuid rand_uuid = (uuid){ 0, 0 }; // funny trick
+  //send_spawn_entity(server, player_num, 1, rand_uuid, 4, -18, 1, -2, 0, 0, 192, 0, 0, 0, 0);
 }
 
 int main(void)
@@ -263,6 +294,11 @@ void send_set_center_chunk(simple_server *server, int player_num, int32_t x, int
 }
 
 
+uint64_t get_hash_at_point(int x, int y, int z, int seed) {
+  int to_hash[3] = { x, y, z };
+  return komihash(to_hash, sizeof(to_hash), seed);
+}
+
 // send basic world data
 #define MAX_CHUNK_SIZE 1310720
 void send_chunks(simple_server *server, int player_num, int32_t x, int32_t z) {
@@ -293,7 +329,7 @@ void send_chunks(simple_server *server, int player_num, int32_t x, int32_t z) {
   section.block_states.bits_per_entry = 15;
   section.block_states.format = 2;
   for(int i = 0; i < 4096; i++)
-    section.block_states.data[i] = 0;
+    section.block_states.data[i] = MINECRAFT_AIR;
 
 
   section.biomes.bits_per_entry = 0;
@@ -316,18 +352,16 @@ void send_chunks(simple_server *server, int player_num, int32_t x, int32_t z) {
   noise_caves.domain_warp_type = FNL_DOMAIN_WARP_OPENSIMPLEX2;
   noise_caves.domain_warp_amp = 3.0;
   noise_caves.octaves = 2;
-  fnl_state noise_caves_2 = fnlCreateState();
-  noise_caves.noise_type = FNL_NOISE_OPENSIMPLEX2;
-  noise_caves.seed = 2;
   
   float heightmap[16][16];
-#define NOISE_DEC_2D 2
-#define NOISE_DEC_2D_2 128
+  float biome_map[16][16];
   for(int x2 = 0; x2 < 16; x2++)
     for(int z2 = 0; z2 < 16; z2++){
-      heightmap[x2][z2] = ((fnlGetNoise2D(&noise_2d, ((float)(x*16)+x2)/NOISE_DEC_2D, ((float)(z*16)+z2)/NOISE_DEC_2D)+1)/2)*32;
-      heightmap[x2][z2] *= ((fnlGetNoise2D(&noise_2d_2, ((float)(x*16)+x2)/NOISE_DEC_2D_2, ((float)(z*16)+z2)/NOISE_DEC_2D_2)+1)/2);
-      heightmap[x2][z2] += 30;
+      heightmap[x2][z2] = ((fnlGetNoise2D(&noise_2d, ((float)(x*16)+x2)/HEIGHTMAP_XZ_SCALE, ((float)(z*16)+z2)/HEIGHTMAP_XZ_SCALE)+1)/2)*HEIGHTMAP_INITIAL_HEIGHT_MAX;
+      heightmap[x2][z2] *= ((fnlGetNoise2D(&noise_2d_2, ((float)(x*16)+x2)/HEIGHTMAP_XZ_MULT_SCALE, ((float)(z*16)+z2)/HEIGHTMAP_XZ_MULT_SCALE)+1)/2);
+      heightmap[x2][z2] += HEIGHTMAP_Y_ADD;
+
+      biome_map[x2][z2] = ((fnlGetNoise2D(&noise_2d, ((float)(x*16)+x2)/BIOME_SCALE, ((float)(z*16)+z2)/BIOME_SCALE)+1)/2);
     }
   
   for(int i = 0; i < 24; i++) {
@@ -338,29 +372,38 @@ void send_chunks(simple_server *server, int player_num, int32_t x, int32_t z) {
 	  float block_z = (z*16)+local_z;
 	  for(int local_x = 0; local_x < 16; local_x++) {
 	    float block_x = (x*16)+local_x;
-
 	    int idx = (local_y*16*16)+(local_z*16)+local_x;
-#define NOISE_DEC 0.2
-#define NOISE_DEC_2 2
+
 	    float block_x_warped = block_x;
 	    float block_y_warped = block_y;
 	    float block_z_warped = block_z;
 	    fnlDomainWarp3D(&noise_caves, &block_x_warped, &block_y_warped, &block_z_warped);
-	    float noise1 = (fnlGetNoise3D(&noise_caves, block_x_warped/NOISE_DEC, block_y_warped/NOISE_DEC, block_z_warped/NOISE_DEC)+1)/2;
-	    float noise2 = (fnlGetNoise3D(&noise_caves_2, block_x/NOISE_DEC_2, block_y/NOISE_DEC_2, block_z/NOISE_DEC_2)+1)/2;
+	    float noise1 = (fnlGetNoise3D(&noise_caves, block_x_warped/CAVE_SCALE, block_y_warped/CAVE_SCALE, block_z_warped/CAVE_SCALE)+1)/2;
+	    // make caves much more likely at cave center
+	    float height_offset = fabsf((float)(block_y - CAVE_CENTER) / HEIGHTMAP_INITIAL_HEIGHT_MAX) + 1.0f;
+	    float cave_multiplier = (1.0f / height_offset) * CAVE_BOOST_AT_CENTER;
 	    if((int)heightmap[local_x][local_z] > block_y) {
 	      //section.block_states.data[idx] = 1;
-	      //printf("%f\n", noise1);
-	      if (noise2 < 0.5 && noise1 < 0.4) {
-		section.block_states.data[idx] = 0;
+	      //printf("%f, %f\n", cave_multiplier, block_y);
+	      if (noise1*cave_multiplier > 0.45) {//noise2 < 0.5 && 
+		section.block_states.data[idx] = MINECRAFT_AIR;
 	      } else {
-		section.block_states.data[idx] = 1;
-		if((int)heightmap[local_x][local_z]-1 <= block_y) {
-		  section.block_states.data[idx] = 9;
-		}
+		uint64_t hash1 = get_hash_at_point((int)block_x, (int)block_y, (int)block_z, 0);
+		section.block_states.data[idx] = MINECRAFT_STONE;
+		int ore_to_spawn = (hash1&255);
+		if(ore_to_spawn == 0)
+		  section.block_states.data[idx] = MINECRAFT_GOLD_ORE;
+		else if(ore_to_spawn == 1)
+		  section.block_states.data[idx] = MINECRAFT_DIAMOND_ORE;
+		  
+		if((int)heightmap[local_x][local_z]-1 <= block_y)
+		  section.block_states.data[idx] = MINECRAFT_GRASS_BLOCK__SNOWY_FALSE;
+		else if((int)heightmap[local_x][local_z]-3 <= block_y)
+		  section.block_states.data[idx] = MINECRAFT_DIRT;
+		
 	      }
 	    } else
-	      section.block_states.data[idx] = 0;
+	      section.block_states.data[idx] = MINECRAFT_AIR;
 
 	  }
 	}
@@ -389,110 +432,4 @@ void send_chunks(simple_server *server, int player_num, int32_t x, int32_t z) {
 
  
 
-void send_chunks_maze(simple_server *server, int player_num, int32_t x, int32_t z) {
-  chunk_data_and_update_light packet;
-  packet.heightmap_count = 0;
-  packet.block_entities_count = 0;
-  packet.x = x;
-  packet.y = z;
 
-  packet.o1 = 0;
-  packet.o2 = 0;
-  packet.o3 = 0;
-  packet.o4 = 0;
-  packet.o5 = 0;
-  packet.o6 = 0;
-
-
-  uint8_t blockwise = 1;
-  uint32_t width = 48/2;
-  uint32_t height = 48/2;
-  uint64_t result;
-  uint64_t buffer_size = mazelib_get_required_buffer_size ( width, height, blockwise );
-  uint8_t* buffer = ( uint8_t* ) malloc ( buffer_size );
-  if ( buffer == NULL )
-    {
-      printf ( "Failed to allocate memory.\n" );
-      return;
-    }
-  result = mazelib_generate ( width, height, ( uint64_t ) 32, 25, blockwise, buffer, buffer_size );
-  if ( result == 0 )
-    {
-      printf ( "Generation failed.\n" );
-      free ( buffer );
-      return;
-    }  
-
-  uint8_t *packet_ptr = write_buf+4;
-  uint32_t max = 0;
-  uint8_t chunk_data[MAX_CHUNK_SIZE];
-  uint8_t *chunk_data_ptr = chunk_data;
-  uint32_t chunk_data_max = 0;
-  
-
-  chunk_section section;
-  section.block_count = 4096;
-
-  section.block_states.bits_per_entry = 15;
-  section.block_states.format = 2;
-  for(int i = 0; i < 4096; i++)
-    section.block_states.data[i] = 0;
-
-
-  section.biomes.bits_per_entry = 0;
-  section.biomes.format = 0;
-  section.biomes.value = 0;
-
-
-  
-  width *= 2;
-  ++width;
-  height *= 2;  
-  ++height;
-  for(int i = 0; i < 24; i++) {
-    // write chunk data to our array
-    for(int local_y = 0; local_y < 16; local_y++) {
-      int block_y = (i*16)+local_y;
-      for(int local_z = 0; local_z < 16; local_z++) {
-	int block_z = (z*16)+local_z;
-	for(int local_x = 0; local_x < 16; local_x++) {
-	  int block_x = (x*16)+local_x;
-
-	  int idx = (local_y*16*16)+(local_z*16)+local_x;
-#define NOISE_DEC 0.2
-#define NOISE_DEC_2 2
-	  int is_filled = buffer[mazelib_get_cell_index ( ((block_x/2)+48/2)%width, ((block_z/2)+48/2)%height, height )];
-	  if(block_y < 1)
-	    section.block_states.data[idx] = 9;
-	  else if(abs(block_x) > 48 || abs(block_z) > 48)
-	    section.block_states.data[idx] = 0;
-	  else if(is_filled && block_y < 3) {
-	    //section.block_states.data[idx] = 1;
-	    //printf("%f\n", noise1);
-	    section.block_states.data[idx] = 1;
-	      
-	  } else
-	    section.block_states.data[idx] = 0;
-
-	}
-      }
-    }
-      
-    
-    
-    int error = write_chunk_section(&chunk_data_ptr, &chunk_data_max, MAX_CHUNK_SIZE, section);
-    if (error) {
-      printf("error while writing chunk section: %d\n", error);
-      return;
-    }    
-  }
-  packet.data = chunk_data;
-  packet.data_len = chunk_data_max;
-  write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE-4, CHUNK_DATA_AND_UPDATE_LIGHT_ID);
-  int error = write_chunk_data_and_update_light(&packet_ptr, &max, WRITE_BUF_SIZE-4, packet);
-  if (error) {
-    printf("error: %d\n", error);
-    return;
-  }
-  send_packet(write_buf, max, server->players[player_num]->conn.fd);
-}

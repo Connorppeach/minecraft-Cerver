@@ -10,6 +10,12 @@ player *create_player(int fd) {
   m_player->conn.fd = fd;
   m_player->conn.backlog = NULL;
   m_player->conn.connection_state = 0;
+  m_player->loc.x = 0;
+  m_player->loc.y = 0;
+  m_player->loc.z = 0;
+  m_player->loc.pitch = 0;
+  m_player->loc.yaw = 0;
+
   m_player->conn.backlog_len = 0;
   return m_player;
 }

@@ -44,22 +44,22 @@ int write_lpvec3(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, l
 int write_position(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, position value);
 
 
-void print_bool(uint8_t val);
-void print_byte(int8_t val);
-void print_ubyte(uint8_t val);
-void print_short(int16_t val);
-void print_ushort(uint16_t val);
-void print_int(int32_t val);
-void print_uint(uint32_t val);
-void print_long(int64_t val);
-void print_float(float val_float);
-void print_double(double val_double);
-void print_var_int(int32_t value);
-void print_var_long(int64_t value);
-void print_var_str(lstr value);
-void print_uuid(uuid value);
-void print_network_nbt(nbt_tag_t *val);
-void print_lpvec3(lpvec3 value);
-void print_position(position value);
+void print_bool(uint8_t val, int indentation);
+void print_byte(int8_t val, int indentation);
+void print_ubyte(uint8_t val, int indentation);
+void print_short(int16_t val, int indentation);
+void print_ushort(uint16_t val, int indentation);
+void print_int(int32_t val, int indentation);
+void print_uint(uint32_t val, int indentation);
+void print_long(int64_t val, int indentation);
+void print_float(float val_float, int indentation);
+void print_double(double val_double, int indentation);
+void print_var_int(int32_t value, int indentation);
+void print_var_long(int64_t value, int indentation);
+void print_var_str(lstr value, int indentation);
+void print_uuid(uuid value, int indentation);
+void print_network_nbt(nbt_tag_t *val, int indentation);
+void print_lpvec3(lpvec3 value, int indentation);
+void print_position(position value, int indentation);
 
 #endif // _H_RW_CERVER_
