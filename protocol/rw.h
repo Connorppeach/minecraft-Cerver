@@ -2,8 +2,31 @@
 #define _H_RW_CERVER_
 #include <stdint.h>
 #include "error_codes.h"
-#include "types.h"
-#include "libnbt/nbt.h"
+typedef struct {
+  char *str;
+  int len;
+} lstr;
+#define lstr_static(str) (lstr){str, strlen(str)}
+
+typedef struct {
+  int64_t high;
+  int64_t low;
+} uuid;
+
+typedef struct {
+  double x, y, z;
+  float pitch, yaw;
+} mc_location;
+
+typedef struct {
+  double x, y, z;
+} lpvec3;
+
+typedef struct {
+  int32_t x, y, z;
+} position;
+
+#include "../libnbt/nbt.h"
 
 int read_bool(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, uint8_t *out);
 int read_byte(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, int8_t *out);

@@ -2,7 +2,7 @@
 #define _PLAYER_H_
 
 #include <stdint.h>
-#include <types.h>
+#include "../protocol/rw.h"
 
 typedef struct Player {
   struct {

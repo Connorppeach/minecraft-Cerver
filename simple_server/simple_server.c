@@ -27,6 +27,7 @@ int allocate_player(simple_server *server, int fd) {
   }
   return -1;
 }
+
 void deallocate_player(simple_server *server, int player_id) {
   if(server->player_slots[player_id]) {
     puts("deallocating player");

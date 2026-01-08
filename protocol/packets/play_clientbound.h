@@ -93,76 +93,6 @@
 #define SET_CAMERA_ID (SET_BORDER_WARNING_DISTANCE_ID+1)
 #define SET_CENTER_CHUNK_ID (SET_CAMERA_ID+1)
 
-// serverbound
-
-#define CONFIRM_TELEPORTATION_ID 0
-#define QUERY_BLOCK_ENTITY_TAG_ID (CONFIRM_TELEPORTATION_ID+1)
-#define BUNDLE_ITEM_SELECTED_ID (QUERY_BLOCK_ENTITY_TAG_ID+1)
-#define CHANGE_DIFFUCULTY_ID (BUNDLE_ITEM_SELECTED_ID+1)
-#define CHANGE_GAME_MODE_ID (CHANGE_DIFFUCULTY_ID+1)
-#define ACK_MESSAGE_ID (CHANGE_GAME_MODE_ID+1)
-#define CHAT_COMMAND_ID (ACK_MESSAGE_ID+1)
-#define SIGNED_CHAT_COMMAND_ID (CHAT_COMMAND_ID+1)
-#define CHAT_MESSAGE_ID (SIGNED_CHAT_COMMAND_ID+1)
-#define PLAYER_SESSION_ID (CHAT_MESSAGE_ID+1)
-#define CHUNK_BATCH_RECIEVED_ID (PLAYER_SESSION_ID+1)
-#define CLIENT_STATUS_ID (CHUNK_BATCH_RECIEVED_ID+1)
-#define CLIENT_TICK_END_ID (CLIENT_STATUS_ID+1)
-#define CLIENT_INFORMATION_PLAY_ID (CLIENT_TICK_END_ID+1)
-#define COMMAND_SUGGESTIONS_REQUEST_ID (CLIENT_INFORMATION_PLAY_ID+1)
-#define ACK_CONFIGURATION_ID (COMMAND_SUGGESTIONS_REQUEST_ID+1)
-#define CLICK_CONTAINER_BUTTON_PLAY_ID (ACK_CONFIGURATION_ID+1)
-#define CLICK_CONTAINER_PLAY_ID (CLICK_CONTAINER_BUTTON_PLAY_ID+1)
-#define CLOSE_CONTAINER_PLAY_ID (CLICK_CONTAINER_PLAY_ID+1)
-#define CHANGE_CONTAINER_SLOT_STATE_ID (CLOSE_CONTAINER_PLAY_ID+1)
-#define COOKIE_RESPONSE_PLAY_ID (CHANGE_CONTAINER_SLOT_STATE_ID+1)
-#define SERVERBOUND_PLUGIN_MESSAGE_PLAY_ID (COOKIE_RESPONSE_PLAY_ID+1)
-#define DEBUG_SAMPLE_SUBSCRIPTION_ID (SERVERBOUND_PLUGIN_MESSAGE_PLAY_ID+1)
-#define EDIT_BOOK_ID (DEBUG_SAMPLE_SUBSCRIPTION_ID+1)
-#define QUERY_ENTITY_TAG_ID (EDIT_BOOK_ID+1)
-#define INTERACT_ID (QUERY_ENTITY_TAG_ID+1)
-#define JIGSAW_GENERATE_ID (INTERACT_ID+1)
-#define SERVERBOUND_KEEP_ALIVE_ID (JIGSAW_GENERATE_ID+1)
-#define LOCK_DIFFUCULTY_ID (SERVERBOUND_KEEP_ALIVE_ID+1)
-#define SET_PLAYER_POSITION_ID (LOCK_DIFFUCULTY_ID+1)
-#define SET_PLAYER_POSITION_AND_ROTATION_ID (SET_PLAYER_POSITION_ID+1)
-#define SET_PLAYER_ROTATION_ID (SET_PLAYER_POSITION_AND_ROTATION_ID+1)
-#define SET_PLAYER_MOVEMENT_FLAGS_ID (SET_PLAYER_ROTATION_ID+1)
-#define MOVE_VEHICLE_SERVERBOUND_ID (SET_PLAYER_MOVEMENT_FLAGS_ID+1)
-#define PADDLE_BOAT_ID (MOVE_VEHICLE_SERVERBOUND_ID+1)
-#define PICK_ITEM_FROM_BLOCK_ID (PADDLE_BOAT_ID+1)
-#define PICK_ITEM_FROM_ENTITY_ID (PICK_ITEM_FROM_BLOCK_ID+1)
-#define PING_REQUEST_PLAY_ID (PICK_ITEM_FROM_ENTITY_ID+1)
-#define PLACE_RECIPE_ID (PING_REQUEST_FROM_PLAY_ID+1)
-#define PLAYER_ABILITIES_SERVERBOUND_ID (PLACE_RECIPE_ID+1)
-#define PLAYER_ACTION_ID (PLAYER_ABILITIES_SERVERBOUND_ID+1)
-#define PLAYER_COMMAND_ID (PLAYER_ACTION_ID+1)
-#define PLAYER_INPUT_ID (PLAYER_COMMAND_ID+1)
-#define PLAYER_LOADED_ID (PLAYER_INPUT_ID+1)
-#define PONG_PLAY_ID (PLAYER_LOADED_ID+1)
-#define CHANGE_RECIPIE_BOOK_SETTINGS_ID (PONG_PLAY_ID+1)
-#define SET_SEEN_RECIPE_ID (CHANGE_RECIPIE_BOOK_SETTINGS_ID+1)
-#define RENAME_ITEM_ID (SET_SEEN_RECIPE_ID+1)
-#define RESOURCE_PACK_RESPONSE_PLAY_ID (RENAME_ITEM_ID+1)
-#define SEEN_ADVANCEMENTS_ID (RESOURCE_PACK_RESPONSE_PLAY_ID+1)
-#define SELECT_TRADE_ID (SEEN_ADVANCEMENTS_ID+1)
-#define SET_BEACON_EFFECT_ID (SELECT_TRADE_ID+1)
-#define SET_HELD_ITEM_SERVERBOUND_ID (SET_BEACON_EFFECT_ID+1)
-#define PROGRAM_COMMAND_BLOCK_ID (SET_HELD_ITEM_SERVERBOUND_ID+1)
-#define PROGRAM_COMMAND_BLOCK_MINECART_ID (PROGRAM_COMMAND_BLOCK_ID+1)
-#define SET_CREATIVE_MODE_SLOT_ID (PROGRAM_COMMAND_BLOCK_MINECART_ID+1)
-#define PROGRAM_JIGSAW_BLOCK_ID (SET_CREATIVE_MODE_SLOT_ID+1)
-#define PROGRAM_STRUCTURE_BLOCK_ID (PROGRAM_JIGSAW_BLOCK_ID+1)
-#define SET_TEST_BLOCK_ID (PROGRAM_STRUCTURE_BLOCK_ID+1)
-#define UPDATE_SIGN_ID (SET_TEST_BLOCK_ID+1)
-#define SWING_ARM_ID (UPDATE_SIGN_ID+1)
-#define TELEPORT_TO_ENTITY_ID (SWING_ARM_ID+1)
-#define TEST_INSTANCE_BLOCK_ACTION_ID (TELEPORT_TO_ENTITY_ID+1)
-#define USE_ITEM_ON_ID (TEST_INSTANCE_BLOCK_ACTION_ID+1)
-#define USE_ITEM_ID (USE_ITEM_ON_ID+1)
-#define CUSTOM_CLICK_ACTION_ID (USE_ITEM_ID+1)
-
-
 // clientbound
 PACKET(login_play,
        R(int, int32_t, eid);
@@ -248,27 +178,99 @@ PACKET(chunk_block_entity,
        O(network_nbt, nbt_tag_t*, data);
        );
 
-
 PACKET(paletted_container,
-       R(ubyte, uint8_t, bits_per_entry);
 #if defined(PACKET_READ_IMPL)
        // todo -- read
 #elif defined(PACKET_WRITE_IMPL)
-       // todo -- more than single valued palettes
-       if (out.format == 0) {
-	 write_var_int(packet_buffer, pos, max, out.value);	
-       } else if (out.format == 2) { // direct
-	 int number_of_entries = 4096;
-	 int entries_per_long = floor((float)64 / out.bits_per_entry);
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+
+       int number_of_entries;
+       if(out.type == 0)
+	 number_of_entries = 4096;
+       else if(out.type == 1)
+	 number_of_entries = 64;
+
+       int32_t n_distinct_values = 0;
+       int32_t distinct_values[number_of_entries];
+       for(int i = 0; i < number_of_entries; i++) {
+	 int32_t value = out.data[i];
+	 int8_t found_data = 0;
+	 for(int j = 0; j < n_distinct_values; j++)
+	   if(distinct_values[j] == value)
+	     found_data = 1;
+	 if(!found_data) { // distinct
+	   distinct_values[n_distinct_values++] = value;
+	 }
+       }
+       int n_distinct_values_2 = n_distinct_values;
+       int bits_per_entry = 0;
+       //printf("%d\n%d\n", bits_per_entry, n_distinct_values);
+
+       while (n_distinct_values_2 > 0) {
+	 n_distinct_values_2 &= (n_distinct_values_2 - 1); // Unsets the rightmost set bit
+	 bits_per_entry++;      // Increment count
+       }
+       bits_per_entry = MAX(out.min_max_bpe_indirect[0], bits_per_entry);
+
+       if (n_distinct_values == 1) {
+	 error = write_ubyte(packet_buffer, pos, max, 0);
+	 if(error) return error;
+	 error = write_var_int(packet_buffer, pos, max, distinct_values[0]);	
+	 if(error) return error;
+       } else if (bits_per_entry <= out.min_max_bpe_indirect[1]) { // paletted
+
+	 error = write_ubyte(packet_buffer, pos, max, bits_per_entry);
+	 if(error) return error;
+	 error = write_var_int(packet_buffer, pos, max, n_distinct_values);	
+	 for(int i = 0; i < n_distinct_values; i++) {
+	   error = write_var_int(packet_buffer, pos, max, distinct_values[i]);
+	   //printf("%d\n", n_distinct_values);
+	   if(error) return error;
+	 }
+
+	 int entries_per_long = 64 / bits_per_entry;
 	 int number_of_longs = ceil((float)number_of_entries / entries_per_long);
 
-	 uint64_t entry_mask = ((uint64_t)1 << out.bits_per_entry) - 1;
-	 
-	 uint64_t data[4096];
-	 for(int i = 0; i < number_of_longs; i++) data[i] = 0;
+	 uint64_t entry_mask = ((uint64_t)1 << bits_per_entry) - 1;
+	 //printf("entry_mask: %ld\n", entry_mask);
+	 uint64_t data[number_of_entries] = { };
+	 //for(int i = 0; i < number_of_longs; i++) data[i] = 0;
 	 for(int i = 0; i < number_of_entries; i++) {
 	   int long_index = i / entries_per_long;
-	   int bit_index = i % entries_per_long * out.bits_per_entry;
+	   int bit_index = (i % entries_per_long) * bits_per_entry;
+
+	   data[long_index] &= ~(entry_mask << bit_index);
+	   // if value has a smaller integer type, it may again be necessary to cast it to 64 bits.
+	   int data_idx = 0;
+	   for(int j = 0; j < n_distinct_values; j++)
+	     if(out.data[i] == distinct_values[j])
+	       data_idx = j;
+	     
+	   data[long_index] |= (uint64_t)data_idx << bit_index;
+	 }
+	 
+	 for(int i = 0; i < number_of_longs; i++) {
+	   error = write_long(packet_buffer, pos, max, data[i]);
+	   if(error)
+	     return error;
+	 }
+	 
+
+       } else { // direct
+	 error = write_ubyte(packet_buffer, pos, max, out.bits_per_entry_direct);
+	 if(error) return error;
+
+	 int entries_per_long = floor((float)64 / out.bits_per_entry_direct);
+	 int number_of_longs = ceil((float)number_of_entries / entries_per_long);
+
+	 uint64_t entry_mask = ((uint64_t)1 << out.bits_per_entry_direct) - 1;
+	 
+	 uint64_t data[4096] = { 0 };
+	 //for(int i = 0; i < number_of_longs; i++) data[i] = 0;
+	 for(int i = 0; i < number_of_entries; i++) {
+	   int long_index = i / entries_per_long;
+	   int bit_index = i % entries_per_long * out.bits_per_entry_direct;
 
 	   //printf("%d\n", long_index);
 	   data[long_index] &= ~(entry_mask << bit_index);
@@ -288,10 +290,12 @@ PACKET(paletted_container,
 #elif defined(PACKET_PRINT_IMPL)
        // todo -- print
 #else
-       int32_t data[4096];  // only does stuff in format 1 and 2
-       int32_t value; // only does stuff in format 0
-       int32_t palette_length; // only does stuff in format 1
-       uint8_t format; // only does stuff in format 1
+#define PALETTED_CONTAINER_TYPE_BLOCK 0
+#define PALETTED_CONTAINER_TYPE_BIOME 1
+       int32_t data[4096];
+       uint8_t min_max_bpe_indirect[2]; 
+       uint8_t bits_per_entry_direct;
+       uint8_t type; // 0 for chunk, 1 for biome(determines the number of entries)
 #endif
        );
 PACKET(chunk_section,
@@ -327,29 +331,4 @@ PACKET(spawn_entity,
        R(var_int, int32_t, data);
        );
 
-// serverbound
 
-PACKET(confirm_teleportation,
-       R(var_int, int32_t, teleport_id);
-       );
-
-PACKET(set_player_position,
-       R(double, double, x);
-       R(double, double, y);
-       R(double, double, z);
-       R(byte, int8_t, flags);
-       );
-PACKET(set_player_position_and_rotation,
-       R(double, double, x);
-       R(double, double, y);
-       R(double, double, z);
-       R(float, float, yaw);
-       R(float, float, pitch);
-       R(byte, int8_t, flags);
-       );
-
-PACKET(set_player_rotation,
-       R(float, float, yaw);
-       R(float, float, pitch);
-       R(byte, int8_t, flags);
-       );

@@ -5,7 +5,7 @@
 #include "rw.h"
 
 #define NBT_IMPLEMENTATION
-#include "libnbt/nbt.h"
+#include "../libnbt/nbt.h"
 
 
 

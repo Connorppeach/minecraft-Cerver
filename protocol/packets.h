@@ -1,6 +1,4 @@
 #include <stdint.h>
-#include "types.h"
-#include "player.h"
 #include "rw.h"
 
 
@@ -167,9 +165,12 @@
 
 
 #include "packets/handshake.h"
-#include "packets/login.h"
-#include "packets/configuration.h"
-#include "packets/play.h"
+#include "packets/login_clientbound.h"
+#include "packets/login_serverbound.h"
+#include "packets/configuration_serverbound.h"
+#include "packets/configuration_clientbound.h"
+#include "packets/play_serverbound.h"
+#include "packets/play_clientbound.h"
 
 
 // general structure for "custom" readers writers and printers

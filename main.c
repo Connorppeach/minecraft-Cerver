@@ -1,11 +1,11 @@
 #include <errno.h>
 
-#include "rw.h"
+#include "protocol/rw.h"
+#include "protocol/packets.h"
 #include "blocks.h"
-#include "util.h"
-#include "player.h"
-#include "packets.h"
-#include "simple_server.h"
+#include "simple_server/util.h"
+#include "simple_server/player.h"
+#include "simple_server/simple_server.h"
 
 #define MAZELIB_IMPLEMENTATION
 #include "include/mazelib.h"
@@ -27,7 +27,6 @@ void send_spawn_entity(simple_server *server, int player_num, int32_t entity_id,
 // settings
 #define MAX_PLAYERS 10
 #define WORLD_GEN_LIMIT 6
-
 // world gen settings
 // cave settings
 #define CAVE_SCALE 0.2
@@ -300,43 +299,10 @@ uint64_t get_hash_at_point(int x, int y, int z, int seed) {
 }
 
 // send basic world data
-#define MAX_CHUNK_SIZE 1310720
 void send_chunks(simple_server *server, int player_num, int32_t x, int32_t z) {
-  chunk_data_and_update_light packet;
-  packet.heightmap_count = 0;
-  packet.block_entities_count = 0;
-  packet.x = x;
-  packet.y = z;
-
-  packet.o1 = 0;
-  packet.o2 = 0;
-  packet.o3 = 0;
-  packet.o4 = 0;
-  packet.o5 = 0;
-  packet.o6 = 0;
-
-
-  uint8_t *packet_ptr = write_buf+4;
-  uint32_t max = 0;
-  uint8_t chunk_data[MAX_CHUNK_SIZE];
-  uint8_t *chunk_data_ptr = chunk_data;
-  uint32_t chunk_data_max = 0;
-  
-
-  chunk_section section;
-  section.block_count = 4096;
-
-  section.block_states.bits_per_entry = 15;
-  section.block_states.format = 2;
-  for(int i = 0; i < 4096; i++)
-    section.block_states.data[i] = MINECRAFT_AIR;
-
-
-  section.biomes.bits_per_entry = 0;
-  section.biomes.format = 0;
-  section.biomes.value = 0;
-
-
+  int32_t chunk_data[4096*24];
+  /* for(int i = 0; i < 4096*24; i++) */
+  /*   chunk_data[i] = MINECRAFT_AIR; */
   fnl_state noise_2d = fnlCreateState();
   noise_2d.noise_type = FNL_NOISE_PERLIN;
   noise_2d.frequency = 0.05;
@@ -372,7 +338,7 @@ void send_chunks(simple_server *server, int player_num, int32_t x, int32_t z) {
 	  float block_z = (z*16)+local_z;
 	  for(int local_x = 0; local_x < 16; local_x++) {
 	    float block_x = (x*16)+local_x;
-	    int idx = (local_y*16*16)+(local_z*16)+local_x;
+	    int idx = (i*4096)+(local_y*16*16)+(local_z*16)+local_x;
 
 	    float block_x_warped = block_x;
 	    float block_y_warped = block_y;
@@ -386,24 +352,24 @@ void send_chunks(simple_server *server, int player_num, int32_t x, int32_t z) {
 	      //section.block_states.data[idx] = 1;
 	      //printf("%f, %f\n", cave_multiplier, block_y);
 	      if (noise1*cave_multiplier > 0.45) {//noise2 < 0.5 && 
-		section.block_states.data[idx] = MINECRAFT_AIR;
+	        chunk_data[idx] = MINECRAFT_AIR;
 	      } else {
 		uint64_t hash1 = get_hash_at_point((int)block_x, (int)block_y, (int)block_z, 0);
-		section.block_states.data[idx] = MINECRAFT_STONE;
+		chunk_data[idx] = MINECRAFT_STONE;
 		int ore_to_spawn = (hash1&255);
 		if(ore_to_spawn == 0)
-		  section.block_states.data[idx] = MINECRAFT_GOLD_ORE;
+		  chunk_data[idx] = MINECRAFT_GOLD_ORE;
 		else if(ore_to_spawn == 1)
-		  section.block_states.data[idx] = MINECRAFT_DIAMOND_ORE;
+		  chunk_data[idx] = MINECRAFT_DIAMOND_ORE;
 		  
 		if((int)heightmap[local_x][local_z]-1 <= block_y)
-		  section.block_states.data[idx] = MINECRAFT_GRASS_BLOCK__SNOWY_FALSE;
+		  chunk_data[idx] = MINECRAFT_GRASS_BLOCK__SNOWY_FALSE;
 		else if((int)heightmap[local_x][local_z]-3 <= block_y)
-		  section.block_states.data[idx] = MINECRAFT_DIRT;
+		  chunk_data[idx] = MINECRAFT_DIRT;
 		
 	      }
 	    } else
-	      section.block_states.data[idx] = MINECRAFT_AIR;
+	      chunk_data[idx] = MINECRAFT_AIR;
 
 	  }
 	}
@@ -412,21 +378,23 @@ void send_chunks(simple_server *server, int player_num, int32_t x, int32_t z) {
       
     
     
-    int error = write_chunk_section(&chunk_data_ptr, &chunk_data_max, MAX_CHUNK_SIZE, section);
-    if (error) {
-      printf("error while writing chunk section: %d\n", error);
-      return;
-    }    
   }
-  packet.data = chunk_data;
-  packet.data_len = chunk_data_max;
-  write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE-4, CHUNK_DATA_AND_UPDATE_LIGHT_ID);
-  int error = write_chunk_data_and_update_light(&packet_ptr, &max, WRITE_BUF_SIZE-4, packet);
-  if (error) {
-    printf("error: %d\n", error);
-    return;
-  }
-  send_packet(write_buf, max, server->players[player_num]->conn.fd);
+  /* region *r = allocate_region(); */
+  /* add_chunk_to_region(r, x, z, chunk_data, 24); */
+  /* FILE *fptr; */
+  /* fptr = fopen("test.mcr", "wb"); */
+  /* if (fptr == NULL) { */
+  /*   // Error handling (e.g., print error message, exit program) */
+  /*   printf("Error opening file!\n"); */
+  /*   return; */
+  /* } */
+  
+  /* write_region(fptr, r); */
+  /* fclose(fptr); */
+
+  /* free_region(r); */
+
+  send_chunk_packet(write_buf, WRITE_BUF_SIZE, server->players[player_num]->conn.fd, chunk_data, 24, x, z);
 }
 
 

@@ -8,10 +8,10 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h> 
 #include <arpa/inet.h>
-#include "rw.h"
+#include "../protocol/rw.h"
 #include "util.h"
 #include "player.h"
-#include "packets.h"
+#include "../protocol/packets.h"
 
 #define PORT 25545   // port we're listening on
 
