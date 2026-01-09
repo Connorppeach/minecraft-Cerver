@@ -2,4 +2,5 @@
 **.o
 **.a
 main
+main_tcc
 deploy.sh

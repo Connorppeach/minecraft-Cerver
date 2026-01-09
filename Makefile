@@ -7,6 +7,9 @@ LDFLAGS = -lm
 	$(CC) -c $< $(CFLAGS) -o $@   
 
 main: main.o fast_noise_lite.o protocol/libmcprotocol.a simple_server/libsimple_mc_server.a
+	$(CC) -o $@ $^ $(CFLAGS) $(LDFLAGS)
+
+main_tcc: main_tcc.o simple_server/libsimple_mc_server.a protocol/libmcprotocol.a 
 	$(CC) -o $@ $^ $(CFLAGS) $(LDFLAGS) -ltcc
 
 protocol/libmcprotocol.a:
