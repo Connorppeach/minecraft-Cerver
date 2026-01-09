@@ -1,4 +1,5 @@
 #include "simple_server.h"
+
 #include <time.h>
 
 
@@ -49,6 +50,59 @@ void deallocate_player(simple_server *server, int player_id) {
 
 #define WRITE_BUF_SIMPLE_SERVER_SIZE 1024
 uint8_t write_buf_simple_server[WRITE_BUF_SIMPLE_SERVER_SIZE];
+
+void on_chunk_move(simple_server *server, int player_num, mc_location old_location, mc_location new_location, simple_server_callback cb) {
+  if(cb.player_load_chunks == NULL) return;
+  uint8_t crossed_x_chunk_bound = ((int)new_location.x%16 == 0 && (int)old_location.x%16 != 0);
+  uint8_t crossed_z_chunk_bound = ((int)new_location.z%16 == 0 && (int)old_location.z%16 != 0);
+  
+  /* printf("username: %s\n  x: %lf\n  y: %lf\n  z: %lf\n  pitch: %f\n  yaw: %f\n  x: %lf\n  y: %lf\n  z: %lf\n  pitch: %f\n  yaw: %f\n", */
+  /* 	   m_player->username, */
+  /* 	   m_player->loc.x, */
+  /* 	   m_player->loc.y, */
+  /* 	   m_player->loc.z, */
+  /* 	   m_player->loc.pitch, */
+  /* 	   m_player->loc.yaw, */
+  /* 	   old_location.x, */
+  /* 	   old_location.y, */
+  /* 	   old_location.z, */
+  /* 	   old_location.pitch, */
+  /* 	   old_location.yaw) */ ;
+
+  if((old_location.x != new_location.x && old_location.z != new_location.z) && (crossed_x_chunk_bound || crossed_z_chunk_bound)) { // crossed a chunk boundry
+    //printf("more_than_16: %f, %f\n", old_location.z - new_location.z, old_location.x - new_location.x);
+    int8_t direction[2] = {0, 0};
+    if(crossed_x_chunk_bound)
+      direction[0] = (new_location.x < old_location.x) ? -1 : 1;
+    if(crossed_z_chunk_bound)
+      direction[1] = (new_location.z < old_location.z) ? -1 : 1;
+
+    int new_chunk_x = (int)round(new_location.x/16);
+    int new_chunk_z = (int)round(new_location.z/16);
+    /* new_chunk_x += direction[0]+WORLD_GEN_LIMIT; */
+    /* new_chunk_z += direction[1]+WORLD_GEN_LIMIT; */
+    send_set_center_chunk(write_buf_simple_server, WRITE_BUF_SIMPLE_SERVER_SIZE, server->players[player_num]->conn.fd, new_chunk_x, new_chunk_z);
+    int to_add_x = direction[0]*server->world_data.view_distance;
+    int final_x = new_chunk_x + to_add_x;
+
+    int to_add_z = direction[1]*server->world_data.view_distance;
+    int final_z = new_chunk_z + to_add_z;
+
+    /* if(final_x > 0) */
+    /*   final_x -= 1; */
+    /* if(final_z > 0) */
+    /*   final_z -= 1; */
+    for(int j = -1; j < 1; j++)
+      for(int i = -server->world_data.view_distance-1; i < server->world_data.view_distance+1; i++) {
+	if(direction[1] != 0)
+	  cb.player_load_chunks(server, player_num, new_chunk_x+i, final_z-(j*direction[1]));
+	if(direction[0] != 0)
+	  cb.player_load_chunks(server, player_num, final_x-(j*direction[0]), new_chunk_z+i);
+      }
+
+    //printf("%d, %d\n", final_x, final_z);
+  }  
+}
 int handle_player_packet(simple_server *server, int player_num, uint8_t *packet_buf, unsigned int buf_len, simple_server_callback cb) {
   if(!server->player_slots[player_num])
     return 1;
@@ -62,7 +116,8 @@ int handle_player_packet(simple_server *server, int player_num, uint8_t *packet_
     deallocate_player(server, player_num);
     return 1;
   }
-  cb.packet_callback(server, player_num, packet_type, packet_buf, buf_len);
+  if(cb.packet_callback)
+    cb.packet_callback(server, player_num, packet_type, packet_buf, buf_len);
 
   // make a copy of the packet(remember to free if you return)
   uint8_t *raw_data = malloc(buf_len*sizeof(uint8_t));
@@ -754,9 +809,47 @@ int handle_player_packet(simple_server *server, int player_num, uint8_t *packet_
     } else if (packet_type == ACKGNOWLEDGE_SERVER_CONFIGURATION_ID) {
       //puts("\nconfiguration finished\n");
       m_player->conn.connection_state = 4; // yippee, play state
-      cb.finish_configuration(server, player_num);
+      {
+	login_play play;
+	play.eid = player_num;
+	play.is_hardcore = 0;
+	lstr dim_names[] = { lstr_static("minecraft:overworld") };
+	play.dimension_names = &*dim_names;
+	play.dimension_name_count = 1;
+	play.max_players = 1;
+	play.view_distance = server->world_data.view_distance;
+	play.simulation_distance = 10;
+	play.reduced_debug_info = 0;
+	play.enable_respawn_screen = 0;
+	play.do_limited_crafting = 0;
+	play.dimension_type = 0;
+	play.dimension_name = lstr_static("minecraft:overworld");
+	play.hashed_seed = 0;
+	play.game_mode = 1;
+	play.prev_game_mode = -1;
+	play.is_debug = 0;
+	play.is_flat = 0;
+	play.has_death_location = 0;
+	play.portal_cooldown = 10;
+	play.sea_level = 10;
+	play.enforces_secure_chat = 0;
+
+	uint8_t *packet_ptr = write_buf_simple_server+4;
+	uint32_t max = 0;
+	write_var_int(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, LOGIN_PLAY_ID);
+	write_login_play(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, play);
+	send_packet(write_buf_simple_server, max, server->players[player_num]->conn.fd);
+
+      }      
+      if(cb.finish_login_play)
+	cb.finish_login_play(server, player_num);
+      if(cb.player_load_chunks)
+	for(int x = -server->world_data.view_distance-1; x < server->world_data.view_distance+1; x++)
+	  for(int y = -server->world_data.view_distance-1; y < server->world_data.view_distance+1; y++)
+	    cb.player_load_chunks(server, player_num, x+(server->players[player_num]->loc.x/16), y+(server->players[player_num]->loc.z/16));
+
     }
-  } else if  (m_player->conn.connection_state == 4) { // play
+  } else if (m_player->conn.connection_state == 4) { // play
     if (packet_type == SET_PLAYER_POSITION_ID) {
       set_player_position packet;
       mc_location old_loc = m_player->loc;
@@ -771,6 +864,7 @@ int handle_player_packet(simple_server *server, int player_num, uint8_t *packet_
 
       if(cb.on_move)
 	cb.on_move(server, player_num, old_loc, m_player->loc);
+      on_chunk_move(server, player_num, old_loc, m_player->loc, cb);
     } else if(packet_type == SET_PLAYER_POSITION_AND_ROTATION_ID) {
       set_player_position_and_rotation packet;
       mc_location old_loc = m_player->loc;
@@ -787,6 +881,7 @@ int handle_player_packet(simple_server *server, int player_num, uint8_t *packet_
       m_player->loc.pitch = packet.pitch;
       if(cb.on_move)
 	cb.on_move(server, player_num, old_loc, m_player->loc);
+      on_chunk_move(server, player_num, old_loc, m_player->loc, cb);
     } else if(packet_type == SET_PLAYER_ROTATION_ID) {
       set_player_rotation packet;
       mc_location old_loc = m_player->loc;
@@ -795,6 +890,7 @@ int handle_player_packet(simple_server *server, int player_num, uint8_t *packet_
       m_player->loc.pitch = packet.pitch;
       if(cb.on_move)
 	cb.on_move(server, player_num, old_loc, m_player->loc);
+      on_chunk_move(server, player_num, old_loc, m_player->loc, cb);
     }
 
   }
@@ -958,7 +1054,8 @@ int start_server(simple_server *server, int port, simple_server_callback cb)
 
     if (elapsed_ns >= target_ns) {
       // user tick callback
-      cb.tick_callback(server);
+      if(cb.tick_callback)
+	cb.tick_callback(server);
 
 
       clock_gettime(CLOCK_MONOTONIC, &start_time); // reset clock

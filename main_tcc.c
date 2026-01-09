@@ -49,7 +49,7 @@ char* readfile(FILE *f) {
   return buffer;
 }
 
-simple_server_callback create_server_callback_from_script(char *filename) {
+simple_server_callback create_server_callback_from_script(char *filename, simple_server *server) {
   simple_server_callback cb = { NULL, NULL, NULL, NULL };
   TCCState *s = tcc_new();
   tcc_set_output_type(s, TCC_OUTPUT_MEMORY);
@@ -94,17 +94,25 @@ simple_server_callback create_server_callback_from_script(char *filename) {
   void (*on_move)(simple_server *server, int player_num, mc_location old_location, mc_location new_location) = tcc_get_symbol(s, "on_move");
   if(on_move) cb.on_move = on_move;
 
-  void (*finish_configuration)(simple_server *server, int player_num)  = tcc_get_symbol(s, "on_login");
-  if(finish_configuration) cb.finish_configuration = finish_configuration;
+  void (*finish_login_play)(simple_server *server, int player_num)  = tcc_get_symbol(s, "on_login");
+  if(finish_login_play) cb.finish_login_play = finish_login_play;
 
+  void (*player_load_chunks)(simple_server *server, int player_num, int x, int z)  = tcc_get_symbol(s, "player_load_chunks");
+  if(player_load_chunks) cb.player_load_chunks = player_load_chunks;
+
+  void (*init)(simple_server *server)  = tcc_get_symbol(s, "init");
+  if(player_load_chunks) init(server);
+  
+  
   return cb;
 }
 
 int main(void)
 {
   simple_server *server =  allocate_simple_server(MAX_PLAYERS);
+
   puts("starting server");
-  simple_server_callback cb = create_server_callback_from_script("./server_script.c");
+  simple_server_callback cb = create_server_callback_from_script("./server_script.c", server);
   
   start_server(server, PORT, cb);
 }

@@ -24,6 +24,7 @@ typedef struct {
   fd_set master;
   struct {
     int32_t world_height;
+    int8_t view_distance;
   } world_data;
   uint8_t should_stop;
 } simple_server;
@@ -32,7 +33,8 @@ typedef struct {
 typedef struct {
   void (*packet_callback)(simple_server *server, int player_num, int packet_type, uint8_t *packet_buf, unsigned int buf_len);
   void (*tick_callback)(simple_server *server);
-  void (*finish_configuration)(simple_server *server, int player_num);
+  void (*finish_login_play)(simple_server *server, int player_num);
+  void (*player_load_chunks)(simple_server *server, int player_num, int x, int z);
   void (*on_move)(simple_server *server, int player_num, mc_location old_location, mc_location new_location);
 } simple_server_callback;
 int allocate_player(simple_server *server, int fd);

@@ -99,6 +99,12 @@
 #define SET_ENTITY_METADATA_ID (DISPLAY_OBJECTIVE_ID+1)
 #define LINK_ENTITIES_ID (SET_ENTITY_METADATA_ID+1)
 #define SET_ENTITY_VELOCITY_ID (LINK_ENTITIES_ID+1)
+#define SET_EQUIPMENT_ID (SET_ENTITY_VELOCITY_ID+1)
+#define SET_EXPERIENCE_ID (SET_EQUIPMENT_ID+1)
+#define SET_HEALTH_ID (SET_EXPERIENCE_ID+1)
+#define SET_HELD_ITEM_ID (SET_HEALTH_ID+1)
+#define UPDATE_OBJECTIVES_ID (SET_HELD_ITEM_ID+1)
+#define SET_PASSENGERS_ID (UPDATE_OBJECTIVES_ID+1)
 
 // clientbound
 PACKET(login_play,
@@ -366,6 +372,9 @@ PACKET(player_info_remove,
        RL(uuid, uuid, player_ids, player_id_len);
        );
 
+
+
+
 PACKET(set_entity_velocity,
        R(var_int, int32_t, entity_id);
        R(lpvec3, lpvec3, velocity);
@@ -467,3 +476,245 @@ PACKET(player_info_update,
        );
 
 
+PACKET(entity_metadata,
+#if defined(PACKET_READ_IMPL)
+       // todo -- implement
+#elif defined(PACKET_WRITE_IMPL)
+       error = write_ubyte(packet_buffer, pos, max, out.index);
+       if(error) return error;
+       error = write_var_int(packet_buffer, pos, max, out.type);
+       if(error) return error;
+       switch (out.type) {
+       case 0:
+	 error = write_byte(packet_buffer, pos, max, out.value.byte);
+	 if(error) return error;
+	 break;
+       case 1:
+	 error = write_var_int(packet_buffer, pos, max, out.value.var_int);
+	 if(error) return error;
+	 break;
+       case 2:
+	 error = write_var_long(packet_buffer, pos, max, out.value.var_long);
+	 if(error) return error;
+	 break;
+       case 3:
+	 error = write_float(packet_buffer, pos, max, out.value.float_value);
+	 if(error) return error;
+	 break;
+       case 4:
+	 error = write_var_str(packet_buffer, pos, max, out.value.string);
+	 if(error) return error;
+	 break;
+       case 8:
+	 error = write_bool(packet_buffer, pos, max, out.value.boolean);
+	 if(error) return error;
+	 break;
+       case 9:
+	 error = write_float(packet_buffer, pos, max, out.value.rotations.x);
+	 if(error) return error;
+	 error = write_float(packet_buffer, pos, max, out.value.rotations.y);
+	 if(error) return error;
+	 error = write_float(packet_buffer, pos, max, out.value.rotations.z);
+	 if(error) return error;
+	 break;
+       case 10:
+	 error = write_position(packet_buffer, pos, max, out.value.position);
+	 if(error) return error;
+	 break;
+       case 11:
+	 error = write_bool(packet_buffer, pos, max, out.value.optional_position.has_position);
+	 if(error) return error;
+	 if(out.value.optional_position.has_position) {
+	   error = write_position(packet_buffer, pos, max, out.value.optional_position.position);
+	   if(error) return error;
+	 }
+	 break;
+       case 12:
+	 error = write_var_int(packet_buffer, pos, max, out.value.direction);
+	 if(error) return error;
+	 break;
+       case 13:
+	 error = write_bool(packet_buffer, pos, max, out.value.optional_living_entity_reference.has_uuid);
+	 if(error) return error;
+	 if(out.value.optional_position.has_position) {
+	   error = write_uuid(packet_buffer, pos, max, out.value.optional_living_entity_reference.entity_uuid);
+	   if(error) return error;
+	 }
+	 break;
+       case 14:
+	 error = write_var_int(packet_buffer, pos, max, out.value.block_state);
+	 if(error) return error;
+	 break;
+       case 15:
+	 error = write_var_int(packet_buffer, pos, max, out.value.optional_block_state);
+	 if(error) return error;
+	 break;
+       case 19:
+	 error = write_var_int(packet_buffer, pos, max, out.value.optional_var_int);
+	 if(error) return error;
+	 break;
+       case 20:
+	 error = write_var_int(packet_buffer, pos, max, out.value.pose);
+	 if(error) return error;
+	 break;
+       case 21:
+	 error = write_var_int(packet_buffer, pos, max, out.value.cat_variant);
+	 if(error) return error;
+	 break;
+       case 22:
+	 error = write_var_int(packet_buffer, pos, max, out.value.cow_variant);
+	 if(error) return error;
+	 break;
+       case 23:
+	 error = write_var_int(packet_buffer, pos, max, out.value.wolf_variant);
+	 if(error) return error;
+	 break;
+       case 24:
+	 error = write_var_int(packet_buffer, pos, max, out.value.wolf_sound_variant);
+	 if(error) return error;
+	 break;
+       case 25:
+	 error = write_var_int(packet_buffer, pos, max, out.value.frog_variant);
+	 if(error) return error;
+	 break;
+       case 26:
+	 error = write_var_int(packet_buffer, pos, max, out.value.pig_variant);
+	 if(error) return error;
+	 break;
+       case 27:
+	 error = write_var_int(packet_buffer, pos, max, out.value.chicken_variant);
+	 if(error) return error;
+	 break;
+       case 28:
+	 error = write_var_int(packet_buffer, pos, max, out.value.zombie_natalis_variant);
+	 if(error) return error;
+	 break;
+       case 29:
+	 error = write_bool(packet_buffer, pos, max, out.value.optional_global_position.has_global_position);
+	 if(error) return error;
+	 if(out.value.optional_position.has_position) {
+	   error = write_var_str(packet_buffer, pos, max, out.value.optional_global_position.identifier);
+	   if(error) return error;
+	   error = write_position(packet_buffer, pos, max, out.value.optional_global_position.position);
+	   if(error) return error;
+	 }
+	 break;
+       case 31:
+	 error = write_var_int(packet_buffer, pos, max, out.value.sniffer_state);
+	 if(error) return error;
+	 break;
+       case 32:
+	 error = write_var_int(packet_buffer, pos, max, out.value.armadillo_state);
+	 if(error) return error;
+	 break;
+       case 33:
+	 error = write_var_int(packet_buffer, pos, max, out.value.copper_golem_state);
+	 if(error) return error;
+	 break;
+       case 34:
+	 error = write_var_int(packet_buffer, pos, max, out.value.weathering_copper_state);
+	 if(error) return error;
+	 break;
+       case 35:
+	 error = write_float(packet_buffer, pos, max, out.value.vector_3.x);
+	 if(error) return error;
+	 error = write_float(packet_buffer, pos, max, out.value.vector_3.y);
+	 if(error) return error;
+	 error = write_float(packet_buffer, pos, max, out.value.vector_3.z);
+	 if(error) return error;
+	 break;
+       case 36:
+	 error = write_float(packet_buffer, pos, max, out.value.quat.x);
+	 if(error) return error;
+	 error = write_float(packet_buffer, pos, max, out.value.quat.y);
+	 if(error) return error;
+	 error = write_float(packet_buffer, pos, max, out.value.quat.z);
+	 if(error) return error;
+	 error = write_float(packet_buffer, pos, max, out.value.quat.w);
+	 if(error) return error;
+	 break;
+
+       }
+       
+#elif defined(PACKET_PRINT_IMPL)
+       // todo -- implement
+#else
+       uint8_t index;
+       int32_t type;
+       union {
+	 int8_t byte;
+	 int32_t var_int;
+	 int64_t var_long;
+	 float float_value;
+	 lstr string;
+	 // todo -- text component
+	 // todo -- slot
+	 uint8_t boolean;
+	 struct {
+	   float x, y, z;
+	 } rotations;
+	 position position;
+	 struct {
+	   position position;
+	   uint8_t has_position;
+	 } optional_position;
+	 int32_t direction;
+	 struct {
+	   uuid entity_uuid;
+	   uint8_t has_uuid;
+	 } optional_living_entity_reference;
+	 int32_t block_state;
+	 int32_t optional_block_state;
+	 // todo -- particle 1 and 2
+	 int32_t optional_var_int;
+	 int32_t pose;
+	 int32_t cat_variant;
+	 int32_t cow_variant;
+	 int32_t wolf_variant;
+	 int32_t wolf_sound_variant;
+	 int32_t frog_variant;
+	 int32_t pig_variant;
+	 int32_t chicken_variant;
+	 int32_t zombie_natalis_variant; // todo -- spell
+	 struct {
+	   uint8_t has_global_position;
+	   lstr identifier;
+	   position position;
+	 } optional_global_position;
+	 // todo -- painting variants
+	 int32_t sniffer_state;
+	 int32_t armadillo_state;
+	 int32_t copper_golem_state;
+	 int32_t weathering_copper_state;
+	 struct {
+	   float x, y, z;
+	 } vector_3;
+	 struct {
+	   float x, y, z, w;
+	 } quat;
+
+	 // todo -- resolvable profile and humanoid arm
+	 
+       } value;
+#endif
+       
+       );
+
+
+PACKET(set_entity_metadata,
+       R(var_int, int32_t, entity_id);
+#if defined(PACKET_READ_IMPL)
+       // todo -- implement
+#elif defined(PACKET_WRITE_IMPL)
+       for(int i = 0; i < out.data_len; i++) {
+	 write_entity_metadata(packet_buffer, pos, max, out.data[i]);
+       }
+       write_ubyte(packet_buffer, pos, max, 0xFF);
+#elif defined(PACKET_PRINT_IMPL)
+       // todo -- implement
+#else
+       entity_metadata *data;
+       int32_t data_len;
+#endif
+       
+       );

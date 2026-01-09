@@ -128,3 +128,18 @@ void send_chunk_packet(uint8_t *write_buf, uint32_t packet_max_len, int player_f
   }
   send_packet(write_buf, max, player_fd);
 }
+
+
+void send_set_center_chunk(uint8_t *write_buf, int32_t WRITE_BUF_SIZE, int fd, int32_t x, int32_t y) {
+  set_center_chunk packet;
+  packet.x = x;
+  packet.y = y;
+  uint8_t *packet_ptr = write_buf+4;
+  uint32_t max = 0;
+  
+  write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, SET_CENTER_CHUNK_ID);
+  int error = write_set_center_chunk(&packet_ptr, &max, WRITE_BUF_SIZE, packet);
+  send_packet(write_buf, max, fd);
+  if(error)
+    printf("error setting center chunk: %d\n", error);
+}

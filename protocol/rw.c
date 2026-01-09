@@ -150,10 +150,10 @@ int read_float(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, flo
     return ERR_TOO_FEW_BYTES;
   uint32_t out_l;
   (*pos)+=4;
-  out_l = *((*packet_buffer)++)<<24;
-  out_l |= *((*packet_buffer)++)<<16;
-  out_l |= *((*packet_buffer)++)<<8;
-  out_l |= *((*packet_buffer)++);
+  out_l = (uint32_t)*((*packet_buffer)++)<<24;
+  out_l |= (uint32_t)*((*packet_buffer)++)<<16;
+  out_l |= (uint32_t)*((*packet_buffer)++)<<8;
+  out_l |= (uint32_t)*((*packet_buffer)++);
   memcpy(out, &out_l, sizeof(out_l));
   return 0;
 }
@@ -513,7 +513,7 @@ int write_lpvec3(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, l
   double x = to_write.x;
   double y = to_write.y;
   double z = to_write.z;
-  double chessboardLength = MAX(abs(x), MAX(abs(y), abs(z)));
+  double chessboardLength = MAX(fabs(x), MAX(fabs(y), fabs(z)));
 
   if (chessboardLength < 3.051944088384301E-5) {
     return write_byte(packet_buffer, pos, max, 0);
