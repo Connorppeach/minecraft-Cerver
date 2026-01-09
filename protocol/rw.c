@@ -339,15 +339,15 @@ int _write_nbt(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, nbt
 
   writer.write = write_nbt_inner;
   writer.userdata = &data;
-  nbt_write(writer, val, NBT_WRITE_FLAG_USE_RAW, false);
+  nbt_write(writer, val, NBT_WRITE_FLAG_USE_RAW, 0);
   return 0;
 }
 int write_nbt(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, nbt_tag_t *val) {
-  return _write_nbt(packet_buffer, pos, max, val, true);
+  return _write_nbt(packet_buffer, pos, max, val, 1);
 }
 
 int write_network_nbt(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, nbt_tag_t *val) {
-  return _write_nbt(packet_buffer, pos, max, val, false);
+  return _write_nbt(packet_buffer, pos, max, val, 0);
 }
 
 
@@ -508,12 +508,13 @@ int write_uuid(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, uui
   error = write_long(packet_buffer, pos, max, val.low);
   return error;
 }
-#define pack(x) (long)round((x * 0.5 + 0.5) * 32766.0)
+#define pack(x) (long)round((((double)x) * 0.5 + 0.5) * 32766.0)
 int write_lpvec3(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, lpvec3 to_write) {
   double x = to_write.x;
   double y = to_write.y;
   double z = to_write.z;
   double chessboardLength = MAX(abs(x), MAX(abs(y), abs(z)));
+
   if (chessboardLength < 3.051944088384301E-5) {
     return write_byte(packet_buffer, pos, max, 0);
   } else {
@@ -695,4 +696,7 @@ void print_lpvec3(lpvec3 val, int indentation) {
 
 void print_position(position val, int indentation) {
   printf("[%d, %d, %d]", val.x, val.y, val.z);
+  
 }
+
+

@@ -7,7 +7,7 @@ LDFLAGS = -lm
 	$(CC) -c $< $(CFLAGS) -o $@   
 
 main: main.o fast_noise_lite.o protocol/libmcprotocol.a simple_server/libsimple_mc_server.a
-	$(CC) -o $@ $^ $(CFLAGS) $(LDFLAGS)
+	$(CC) -o $@ $^ $(CFLAGS) $(LDFLAGS) -ltcc
 
 protocol/libmcprotocol.a:
 	$(MAKE) -C protocol/
@@ -16,7 +16,7 @@ simple_server/libsimple_mc_server.a:
 	$(MAKE) -C simple_server/
 
 fast_noise_lite.o: fast_noise_lite.c 
-	$(CC) -c $< $(CFLAGS) -o $@ -Ofast # make noise fast
+	$(CC) -c $< $(CFLAGS) -o $@ -O2 # make noise fast
 
 
 
@@ -28,4 +28,4 @@ test_client: $(OBJ) test_client.o
 clean:
 	rm *.o -f
 	$(MAKE) -C simple_server/ clean
-	$(MAKE) -C protocol/
+	$(MAKE) -C protocol/ clean

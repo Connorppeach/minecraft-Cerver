@@ -85,4 +85,21 @@ void print_network_nbt(nbt_tag_t *val, int indentation);
 void print_lpvec3(lpvec3 value, int indentation);
 void print_position(position value, int indentation);
 
+
+// dummy freers
+#define free_var_int(x) 0
+#define free_bool(x) 0
+#define free_uuid(x) 0
+#define free_var_str(x) 0
+#define free_short(x) 0
+#define free_ushort(x) 0
+#define free_network_nbt(x) nbt_free_tag(*x)
+#define free_long(x) 0
+#define free_byte(x) 0
+#define free_ubyte(x) 0
+#define free_int(x) 0
+#define free_float(x) 0
+#define free_double(x) 0
+#define free_lpvec3(x) 0
+
 #endif // _H_RW_CERVER_

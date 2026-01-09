@@ -16,6 +16,12 @@ player *create_player(int fd) {
   m_player->loc.pitch = 0;
   m_player->loc.yaw = 0;
 
+  m_player->velocity.x = 0;
+  m_player->velocity.y = 0;
+  m_player->velocity.z = 0;
+  m_player->velocity.pitch = 0;
+  m_player->velocity.yaw = 0;
+  
   m_player->conn.backlog_len = 0;
   return m_player;
 }

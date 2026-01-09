@@ -1,28 +1,11 @@
+#ifndef _PACKETS_H_
+#define _PACKETS_H_
+
 #include <stdint.h>
 #include "rw.h"
 
 
-#if defined(PACKET_IMPL)
 
-#undef PACKET_IMPL
-// include defs(and structs)
-#include "packets.h"
-
-// include read impls
-#define PACKET_READ_IMPL
-#include "packets.h"
-#undef PACKET_READ_IMPL
-// include write impls
-#define PACKET_WRITE_IMPL
-#include "packets.h"
-#undef PACKET_WRITE_IMPL
-// define printers
-#define PACKET_PRINT_IMPL
-#include "packets.h"
-#undef PACKET_PRINT_IMPL
-
-
-#endif
 
 
 #if defined(PACKET_READ_IMPL)
@@ -89,6 +72,31 @@
   }									
 
 
+#elif defined(PACKET_FREE_IMPL)
+
+#define PACKET(name, ...)						\
+  int free_##name (name out) {						\
+    __VA_ARGS__								\
+    return 0;								\
+  }
+#define R(type, field_type, field_name)					\
+  free_##type(out.field_name);	\
+
+#define O(type, field_type, field_name)					\
+  if(out.field_name != NULL) {						\
+    free_##type(out.field_name);				\
+  }
+
+
+#define RL(type, field_type, field_name, len_field_name)		\
+  for (int i = 0; i < out.len_field_name; i++) {			\
+    free_##type(out.field_name[i]);				\
+  }									\
+  if(out.field_name)							\
+    free(out.field_name);
+
+
+
 #elif defined(PACKET_PRINT_IMPL)
 
 #define PACKET(name, ...)						\
@@ -136,6 +144,7 @@
   } name;								\
   int read_##name (uint8_t **packet_buffer, unsigned int *pos, unsigned int max, name *out); \
   int write_##name (uint8_t **packet_buffer, unsigned int *pos, unsigned int max, name out); \
+  int free_##name (name out);						\
   void print_##name (name out, int indentation); 
 #define R(type, field_type, field_name)		\
   field_type field_name
@@ -152,9 +161,6 @@
 
 
 
-#ifndef _PACKETS_H_
-#define _PACKETS_H_
-#endif
 
 
 
@@ -163,7 +169,7 @@
 // now the packets
 
 
-
+#if defined(_PACKETS_H_)
 #include "packets/handshake.h"
 #include "packets/login_clientbound.h"
 #include "packets/login_serverbound.h"
@@ -171,7 +177,7 @@
 #include "packets/configuration_clientbound.h"
 #include "packets/play_serverbound.h"
 #include "packets/play_clientbound.h"
-
+#endif
 
 // general structure for "custom" readers writers and printers
 #if defined(PACKET_READ_IMPL)
@@ -191,5 +197,42 @@
 #undef R
 #undef O
 #undef RL
+
+#if defined(PACKET_IMPL)
+
+#undef PACKET_IMPL
+// include defs(and structs)
+
+#undef _PACKETS_H_
+// include read impls
+#define PACKET_READ_IMPL
+#include "packets.h"
+#undef PACKET_READ_IMPL
+
+
+
+#undef _PACKETS_H_
+// include write impls
+#define PACKET_WRITE_IMPL
+#include "packets.h"
+#undef PACKET_WRITE_IMPL
+
+#undef _PACKETS_H_
+// include write impls
+#define PACKET_FREE_IMPL
+#include "packets.h"
+#undef PACKET_FREE_IMPL
+
+
+#undef _PACKETS_H_
+// define printers
+#define PACKET_PRINT_IMPL
+#include "packets.h"
+#undef PACKET_PRINT_IMPL
+#else
+
+#endif
+
+#endif
 
 

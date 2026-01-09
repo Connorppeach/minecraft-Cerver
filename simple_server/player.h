@@ -12,7 +12,10 @@ typedef struct Player {
     int connection_state;
   } conn;
   char username[17];
+  uuid uuid;
   mc_location loc;
+  mc_location velocity;
+
 } player;
 
 player *create_player(int fd);

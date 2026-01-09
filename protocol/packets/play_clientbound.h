@@ -92,6 +92,13 @@
 #define SET_BORDER_WARNING_DISTANCE_ID (SET_BORDER_WARNING_DELAY_ID+1)
 #define SET_CAMERA_ID (SET_BORDER_WARNING_DISTANCE_ID+1)
 #define SET_CENTER_CHUNK_ID (SET_CAMERA_ID+1)
+#define SET_RENDER_DISTANCE_ID (SET_CENTER_CHUNK_ID+1)
+#define SET_CURSOR_ITEM_ID (SET_RENDER_DISTANCE_ID+1)
+#define SET_DEFAULT_SPAWN_POSITION_ID (SET_CURSOR_ITEM_ID+1)
+#define DISPLAY_OBJECTIVE_ID (SET_DEFAULT_SPAWN_POSITION_ID+1)
+#define SET_ENTITY_METADATA_ID (DISPLAY_OBJECTIVE_ID+1)
+#define LINK_ENTITIES_ID (SET_ENTITY_METADATA_ID+1)
+#define SET_ENTITY_VELOCITY_ID (LINK_ENTITIES_ID+1)
 
 // clientbound
 PACKET(login_play,
@@ -157,6 +164,29 @@ PACKET(syncronize_player_position,
        R(int, int32_t, flags);
        );
 
+PACKET(update_entity_position_and_rotation,
+       R(var_int, int32_t, entity_id);
+       R(short, int16_t, delta_x);
+       R(short, int16_t, delta_y);
+       R(short, int16_t, delta_z);
+       R(ubyte, uint8_t, yaw);
+       R(ubyte, uint8_t, pitch);
+       R(bool, uint8_t, on_ground);
+       );
+
+PACKET(set_head_rotation,
+       R(var_int, int32_t, entity_id);
+       R(ubyte, uint8_t, yaw);
+       );
+
+PACKET(update_entity_position,
+       R(var_int, int32_t, entity_id);
+       R(short, int16_t, delta_x);
+       R(short, int16_t, delta_y);
+       R(short, int16_t, delta_z);
+       R(bool, uint8_t, on_ground);
+       );
+
 PACKET(game_event,
        R(ubyte, uint8_t, event_id);
        R(float, float, value);
@@ -190,9 +220,10 @@ PACKET(paletted_container,
 	 number_of_entries = 4096;
        else if(out.type == 1)
 	 number_of_entries = 64;
+       else number_of_entries = 0;
 
        int32_t n_distinct_values = 0;
-       int32_t distinct_values[number_of_entries];
+       int32_t distinct_values[4096];
        for(int i = 0; i < number_of_entries; i++) {
 	 int32_t value = out.data[i];
 	 int8_t found_data = 0;
@@ -234,7 +265,7 @@ PACKET(paletted_container,
 
 	 uint64_t entry_mask = ((uint64_t)1 << bits_per_entry) - 1;
 	 //printf("entry_mask: %ld\n", entry_mask);
-	 uint64_t data[number_of_entries] = { };
+	 uint64_t data[4096] = { };
 	 //for(int i = 0; i < number_of_longs; i++) data[i] = 0;
 	 for(int i = 0; i < number_of_entries; i++) {
 	   int long_index = i / entries_per_long;
@@ -329,6 +360,110 @@ PACKET(spawn_entity,
        R(ubyte, uint8_t, yaw);
        R(ubyte, uint8_t, head_angle);
        R(var_int, int32_t, data);
+       );
+
+PACKET(player_info_remove,
+       RL(uuid, uuid, player_ids, player_id_len);
+       );
+
+PACKET(set_entity_velocity,
+       R(var_int, int32_t, entity_id);
+       R(lpvec3, lpvec3, velocity);
+       );
+PACKET(player_action_add_player_property,
+       R(var_str, lstr, name);
+       R(var_str, lstr, value);
+       );
+
+
+PACKET(player_action,
+       R(uuid, uuid, uuid);
+#if defined(PACKET_READ_IMPL)
+// todo -- impelement
+#elif defined(PACKET_WRITE_IMPL)
+       if(out.actions & 0x01) {
+	 error = write_var_str(packet_buffer, pos, max, out.add_player.name);
+	 if(error) return error;
+	 error = write_var_int(packet_buffer, pos, max, out.add_player.num_properties);
+	 if(error) return error;
+	 for(int i = 0; i < out.add_player.num_properties; i++) {
+	   error = write_player_action_add_player_property(packet_buffer, pos, max, out.add_player.properties[i]);
+	   if(error) return error;
+	   
+	 }
+       }
+       if(out.actions & 0x02) {
+	 // todo -- do
+       }
+       if(out.actions & 0x04) {
+	 error = write_var_int(packet_buffer, pos, max, out.update_game_mode.game_mode);
+	 if(error) return error;
+       }
+       if(out.actions & 0x08) {
+	 error = write_bool(packet_buffer, pos, max, out.update_listed.listed);
+	 if(error) return error;
+       }
+       if(out.actions & 0x10) {
+	 error = write_var_int(packet_buffer, pos, max, out.update_latency.latency);
+	 if(error) return error;
+       }
+       if(out.actions & 0x20) {
+	 // todo -- do
+       }       
+       
+
+#elif defined(PACKET_PRINT_IMPL)
+
+#else
+       struct {
+	 lstr name;
+	 player_action_add_player_property *properties;
+	 int32_t num_properties;
+       } add_player;
+       struct {
+	 // todo -- do
+       } initialize_chat;
+       struct {
+	 int32_t game_mode;
+       } update_game_mode;
+       struct {
+	 uint8_t listed;
+       } update_listed;
+       struct {
+	 int32_t latency;
+       } update_latency;
+       struct {
+	 uint8_t has_display_name;
+	 // todo -- implement chat type
+       } update_display_name;
+       int8_t actions;
+       
+#endif       
+       );
+
+
+
+
+
+PACKET(player_info_update,
+       R(byte, int8_t, actions);
+#if defined(PACKET_READ_IMPL)
+       // todo -- implement
+#elif defined(PACKET_WRITE_IMPL)
+       error = write_var_int(packet_buffer, pos, max, out.player_action_count);
+       if(error) return error;
+       for(int i = 0; i < out.player_action_count; i++) {
+	 out.player_actions[i].actions = out.actions;
+	 error = write_player_action(packet_buffer, pos, max, out.player_actions[i]);
+	 if(error) return error;
+       }
+
+#elif defined(PACKET_PRINT_IMPL)
+       // todo -- implement
+#else
+       player_action *player_actions;
+       int32_t player_action_count;
+#endif
        );
 
 
