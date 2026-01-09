@@ -1057,21 +1057,3 @@ int start_server(simple_server *server, int port, simple_server_callback cb)
 
 
 
-void update_tab_list(simple_server *server) {
-  for(int i = 0; i < server->max_players; i++) {
-    if(server->player_slots[i]) {
-      player_action ac = { server->players[i]->uuid, { lstr_static(server->players[i]->username), NULL, 0} };
-      ac.update_listed.listed = 1;
-      player_action action_list[1] = { ac };
-      player_info_update update_packet = {0x01 | 0x08, action_list, 1};
-    
-      uint8_t *packet_ptr = write_buf_simple_server+4;
-      uint32_t max = 0;
-      write_var_int(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, PLAYER_INFO_UPDATE_ID);
-      write_player_info_update(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, update_packet);
-      for(int j = 0; j < server->max_players; j++)
-	if(server->player_slots[j])
-	  send_packet(write_buf_simple_server, max, server->players[j]->conn.fd);
-    }
-  }
-}

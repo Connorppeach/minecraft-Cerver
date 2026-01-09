@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <libtcc.h>
 
 #include "protocol/rw.h"
 #include "protocol/packets.h"
@@ -7,24 +8,14 @@
 #include "simple_server/player.h"
 #include "simple_server/simple_server.h"
 
-#include "include/FastNoiseLite.h"
-#include "include/komihash.h"
+#include "util.h"
 
 
-
-#define PORT 25545   // port we're listening on
-#define WRITE_BUF_SIZE 1310720
 
 // settings
+
+#define PORT 25545   // port we're listening on
 #define MAX_PLAYERS 10
-#include <libtcc.h>
-
-
-
-
-uint8_t write_buf[WRITE_BUF_SIZE];
-
-
 
 
 
@@ -57,6 +48,7 @@ char* readfile(FILE *f) {
 
   return buffer;
 }
+
 simple_server_callback create_server_callback_from_script(char *filename) {
   simple_server_callback cb = { NULL, NULL, NULL, NULL };
   TCCState *s = tcc_new();
@@ -67,6 +59,29 @@ simple_server_callback create_server_callback_from_script(char *filename) {
   char *data = readfile(f);
   if(!data) return cb;
   int err = tcc_compile_string(s, data);
+  // add symbols
+
+  // utility macro
+#define TCC_ADD_SYMBOL(sym) tcc_add_symbol(s, #sym, &sym)
+  // basic stuff your going to need
+  TCC_ADD_SYMBOL(write_var_int);
+  TCC_ADD_SYMBOL(send_packet);
+  // todo -- make this less stupid(possibly use the macro system?)
+  TCC_ADD_SYMBOL(send_chunk_packet);
+  TCC_ADD_SYMBOL(send_game_event);
+  TCC_ADD_SYMBOL(send_set_center_chunk);
+  TCC_ADD_SYMBOL(send_set_head_rotation);
+  TCC_ADD_SYMBOL(send_spawn_entity);
+  TCC_ADD_SYMBOL(send_update_entity_posrot);
+  TCC_ADD_SYMBOL(write_clientbound_keep_alive);
+  TCC_ADD_SYMBOL(teleport_player);
+  TCC_ADD_SYMBOL(update_tab_list);
+
+  
+  TCC_ADD_SYMBOL(write_login_play);
+
+#undef TCC_ADD_SYMBOL
+  
   if(err == -1) return cb;
   err = tcc_relocate(s);
   if(err == -1) return cb;

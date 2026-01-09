@@ -9,11 +9,11 @@
 
 #include "include/FastNoiseLite.h"
 #include "include/komihash.h"
-
+#include "util.h"
 
 
 #define PORT 25545   // port we're listening on
-#define WRITE_BUF_SIZE 1310720
+#define WRITE_BUF_SIZE 40000
 #define CONSOLE_READ_BUF_SIZE 256
 
 // settings
@@ -33,15 +33,6 @@
 #define BIOME_SCALE 1024
 
 
-void teleport_player(simple_server *server, int player_num, double x, double y, double z, double vx, double vy, double vz);
-void send_game_event(simple_server *server, int player_num, uint8_t event, float value);
-void send_set_center_chunk(simple_server *server, int player_num, int32_t x, int32_t y);
-void send_chunks(simple_server *server, int player_num, int32_t x, int32_t z);
-void send_chunks_maze(simple_server *server, int player_num, int32_t x, int32_t z);
-void send_spawn_entity(simple_server *server, int player_num, int32_t entity_id, uuid entity_uuid, int32_t type, double x, double y, double z, uint8_t pitch, uint8_t yaw, uint8_t head_yaw, int32_t data, double velocity_x, double velocity_y, double velocity_z);
-void send_update_entity_posrot(simple_server *server, int player_num, int eid, double x, double y, double z, double prev_x, double prev_y, double prev_z, float yaw, float pitch, uint8_t on_ground);
-void send_set_head_rotation(simple_server *server, int player_num, int32_t eid, float value);
-
 
 
 char buffer[CONSOLE_READ_BUF_SIZE];
@@ -49,225 +40,10 @@ int stdin_fd;
 uint8_t write_buf[WRITE_BUF_SIZE];
 int total_ticks = 0;
 
-void handle_packet_cb(simple_server *server, int player_num, int packet_type, uint8_t *packet_buf, unsigned int buf_len) {
-  player* m_player = server->players[player_num];
-  uint32_t pos = 0;
-  if(packet_type == SERVERBOUND_KNOWN_PACKS_CONFIGURATION_ID) {
-    /* serverbound_known_packs packet; */
-    /* read_serverbound_known_packs(&packet_buf, &pos, buf_len, &packet); */
-    /* print_serverbound_known_packs(packet, 0) */;
-  }
-  //printf("got packet %d\n", packet_type);
-}
-void read_console_command(simple_server *server) {
-  fd_set read_fds;
-  struct timeval tv;
-  int retval;
-
-  FD_ZERO(&read_fds);
-  FD_SET(stdin_fd, &read_fds);
-
-  tv.tv_sec = 0;
-  tv.tv_usec = 500;
-  fflush(stdout);
-  retval = select(stdin_fd + 1, &read_fds, NULL, NULL, &tv);
-
-  if (retval == -1) {
-    perror("select()");
-  } else if (retval) {
-    if (fgets(buffer, CONSOLE_READ_BUF_SIZE, stdin) != NULL) {
-      if(strcmp(buffer, "stop\n") == 0)
-	server->should_stop = true;
-      else if(strcmp(buffer, "minehut\n") == 0)
-	freopen("log.txt", "a", stdout);
-
-    } else if (feof(stdin)) {
-      // todo -- do something
-    } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
-    }
-  } 
-}
-void send_all_players_to_players(simple_server *server) {
-  for(int i = 0; i < server->max_players; i++) {
-    if(server->player_slots[i]) {
-      for(int j = 0; j < server->max_players; j++)
-	if(server->player_slots[j] &&
-	   server->players[j]->conn.connection_state == 4 &&
-	   j != i) {
-	  //printf("%d\n%d\n\n", i, j);
-	  send_spawn_entity(server, j, i, server->players[i]->uuid, 155,
-			    server->players[i]->loc.x, server->players[i]->loc.y, server->players[i]->loc.z,
-			    server->players[i]->loc.pitch, server->players[i]->loc.yaw, server->players[i]->loc.yaw/1.41, 0, 0, 0, 0);
-	}
-    }
-  }
-}
-
-void tick_callback(simple_server *server) {
-  for (int i = 0; i < server->max_players; i++) {
-    if (server->player_slots[i]) {
-      player* m_player = server->players[i];
-      if(m_player->conn.connection_state == 4) {
-	/* if(total_ticks % 5 == 0) // like, 1 seconds */
-	/*   teleport_player(server, i, 0, y++, 0); */
-
-	// send keepalives
-	if(total_ticks % 400 == 0) {// like, 16 seconds
-	  //send_all_players_to_players(server);
-	  clientbound_keep_alive alive;
-	  alive.id = total_ticks;
-	  uint8_t *packet_ptr = write_buf+4;
-	  uint32_t max = 0;
-	  write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, CLIENTBOUND_KEEP_ALIVE_PLAY_ID);
-	  write_clientbound_keep_alive(&packet_ptr, &max, WRITE_BUF_SIZE, alive);
-	  send_packet(write_buf, max, m_player->conn.fd);
-	}
-      }
-    }
-  }
-  total_ticks++;
-
-  // read fron console
-  read_console_command(server);
-}
-
-void on_move_cb(simple_server *server, int player_num, mc_location old_location, mc_location new_location) {
-  //player *m_player = server->players[player_num];
-
-
-  for(int j = 0; j < server->max_players; j++)
-    if(server->player_slots[j] &&
-       server->players[j]->conn.connection_state == 4 &&
-       j != player_num) {
-      send_update_entity_posrot(server, j, player_num, new_location.x, new_location.y, new_location.z, old_location.x, old_location.y, old_location.z, new_location.yaw, new_location.pitch, true);
-      send_set_head_rotation(server, j, player_num, new_location.yaw);
-    }
-
-  uint8_t crossed_x_chunk_bound = ((int)new_location.x%16 == 0 && (int)old_location.x%16 != 0);
-  uint8_t crossed_z_chunk_bound = ((int)new_location.z%16 == 0 && (int)old_location.z%16 != 0);
-  
-  /* printf("username: %s\n  x: %lf\n  y: %lf\n  z: %lf\n  pitch: %f\n  yaw: %f\n  x: %lf\n  y: %lf\n  z: %lf\n  pitch: %f\n  yaw: %f\n", */
-  /* 	   m_player->username, */
-  /* 	   m_player->loc.x, */
-  /* 	   m_player->loc.y, */
-  /* 	   m_player->loc.z, */
-  /* 	   m_player->loc.pitch, */
-  /* 	   m_player->loc.yaw, */
-  /* 	   old_location.x, */
-  /* 	   old_location.y, */
-  /* 	   old_location.z, */
-  /* 	   old_location.pitch, */
-  /* 	   old_location.yaw) */ ;
-
-  if((old_location.x != new_location.x && old_location.z != new_location.z) && (crossed_x_chunk_bound || crossed_z_chunk_bound)) { // crossed a chunk boundry
-    //printf("more_than_16: %f, %f\n", old_location.z - new_location.z, old_location.x - new_location.x);
-    int8_t direction[2] = {0, 0};
-    if(crossed_x_chunk_bound)
-      direction[0] = (new_location.x < old_location.x) ? -1 : 1;
-    if(crossed_z_chunk_bound)
-      direction[1] = (new_location.z < old_location.z) ? -1 : 1;
-
-    int new_chunk_x = (int)round(new_location.x/16);
-    int new_chunk_z = (int)round(new_location.z/16);
-    /* new_chunk_x += direction[0]+WORLD_GEN_LIMIT; */
-    /* new_chunk_z += direction[1]+WORLD_GEN_LIMIT; */
-    send_set_center_chunk(server, player_num, new_chunk_x, new_chunk_z);
-    int to_add_x = direction[0]*WORLD_GEN_LIMIT;
-    int final_x = new_chunk_x + to_add_x;
-
-    int to_add_z = direction[1]*WORLD_GEN_LIMIT;
-    int final_z = new_chunk_z + to_add_z;
-
-    /* if(final_x > 0) */
-    /*   final_x -= 1; */
-    /* if(final_z > 0) */
-    /*   final_z -= 1; */
-    for(int j = -1; j < 1; j++)
-      for(int i = -WORLD_GEN_LIMIT-1; i < WORLD_GEN_LIMIT+1; i++) {
-	if(direction[1] != 0)
-	  send_chunks(server, player_num, new_chunk_x+i, final_z-(j*direction[1]));
-	if(direction[0] != 0)
-	  send_chunks(server, player_num, final_x-(j*direction[0]), new_chunk_z+i);
-      }
-
-      //printf("%d, %d\n", final_x, final_z);
-  }
-  
-};
-
-
-
-void finish_configuration_cb(simple_server *server, int player_num) {
-  printf("%s joined the game!\n", server->players[player_num]->username);
-  // update tab list
-  if(server->players[player_num]->conn.connection_state == 4) {
-
-    // send them a login play packet, chunks, and their spawn
-    {
-      login_play play;
-      play.eid = player_num;
-      play.is_hardcore = 0;
-      lstr dim_names[] = { lstr_static("minecraft:overworld") };
-      play.dimension_names = &*dim_names;
-      play.dimension_name_count = 1;
-      play.max_players = 1;
-      play.view_distance = WORLD_GEN_LIMIT;
-      play.simulation_distance = 10;
-      play.reduced_debug_info = false;
-      play.enable_respawn_screen = false;
-      play.do_limited_crafting = false;
-      play.dimension_type = 0;
-      play.dimension_name = lstr_static("minecraft:overworld");
-      play.hashed_seed = 0;
-      play.game_mode = 1;
-      play.prev_game_mode = -1;
-      play.is_debug = false;
-      play.is_flat = true;
-      play.has_death_location = false;
-      play.portal_cooldown = 10;
-      play.sea_level = 10;
-      play.enforces_secure_chat = false;
-
-      uint8_t *packet_ptr = write_buf+4;
-      uint32_t max = 0;
-      write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, LOGIN_PLAY_ID);
-      write_login_play(&packet_ptr, &max, WRITE_BUF_SIZE, play);
-      send_packet(write_buf, max, server->players[player_num]->conn.fd);
-
-    }
-    send_game_event(server, player_num, 13, 0.0);
-    send_set_center_chunk(server, player_num, 0, 0);
-    teleport_player(server, player_num, 8.5, 70, 8.5, 0, 0, 0);
-    for(int x = -WORLD_GEN_LIMIT-1; x < WORLD_GEN_LIMIT+1; x++)
-      for(int y = -WORLD_GEN_LIMIT-1; y < WORLD_GEN_LIMIT+1; y++)
-	send_chunks(server, player_num, x, y);
-
-    update_tab_list(server);
-    send_all_players_to_players(server);
-
-    //uuid rand_uuid = (uuid){ 0, 0 }; // funny trick
-  }
-}
-
-
-int main(void)
-{
-  stdin_fd = fileno(stdin); // Get file descriptor for stdin
-  fcntl(stdin_fd, F_SETFL, fcntl(stdin_fd, F_GETFL) | O_NONBLOCK);
-  simple_server *server =  allocate_simple_server(MAX_PLAYERS);
-  puts("starting server");
-  simple_server_callback cb = (simple_server_callback){ handle_packet_cb, tick_callback, finish_configuration_cb, on_move_cb };
-  
-  start_server(server, PORT, cb);
-  fcntl(stdin_fd, F_SETFL, fcntl(stdin_fd, F_GETFL) & ~O_NONBLOCK);
-}
-
 uint64_t get_hash_at_point(int x, int y, int z, int seed) {
   int to_hash[3] = { x, y, z };
   return komihash(to_hash, sizeof(to_hash), seed);
 }
-
-// send basic world data
 void send_chunks(simple_server *server, int player_num, int32_t x, int32_t z) {
   int32_t chunk_data[4096*24];
   /* for(int i = 0; i < 4096*24; i++) */
@@ -351,115 +127,222 @@ void send_chunks(simple_server *server, int player_num, int32_t x, int32_t z) {
   send_chunk_packet(write_buf, WRITE_BUF_SIZE, server->players[player_num]->conn.fd, chunk_data, 24, x, z);
 }
 
+void handle_packet_cb(simple_server *server, int player_num, int packet_type, uint8_t *packet_buf, unsigned int buf_len) {
+  player* m_player = server->players[player_num];
+  uint32_t pos = 0;
+  if(packet_type == SERVERBOUND_KNOWN_PACKS_CONFIGURATION_ID) {
+    /* serverbound_known_packs packet; */
+    /* read_serverbound_known_packs(&packet_buf, &pos, buf_len, &packet); */
+    /* print_serverbound_known_packs(packet, 0) */;
+  }
+  //printf("got packet %d\n", packet_type);
+}
+void read_console_command(simple_server *server) {
+  fd_set read_fds;
+  struct timeval tv;
+  int retval;
+
+  FD_ZERO(&read_fds);
+  FD_SET(stdin_fd, &read_fds);
+
+  tv.tv_sec = 0;
+  tv.tv_usec = 500;
+  fflush(stdout);
+  retval = select(stdin_fd + 1, &read_fds, NULL, NULL, &tv);
+
+  if (retval == -1) {
+    perror("select()");
+  } else if (retval) {
+    if (fgets(buffer, CONSOLE_READ_BUF_SIZE, stdin) != NULL) {
+      if(strcmp(buffer, "stop\n") == 0)
+	server->should_stop = true;
+      else if(strcmp(buffer, "minehut\n") == 0)
+	freopen("log.txt", "a", stdout);
+
+    } else if (feof(stdin)) {
+      // todo -- do something
+    } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
+    }
+  } 
+}
+void send_all_players_to_players(simple_server *server) {
+  for(int i = 0; i < server->max_players; i++) {
+    if(server->player_slots[i]) {
+      for(int j = 0; j < server->max_players; j++)
+	if(server->player_slots[j] &&
+	   server->players[j]->conn.connection_state == 4 &&
+	   j != i) {
+	  //printf("%d\n%d\n\n", i, j);
+	  send_spawn_entity(write_buf, WRITE_BUF_SIZE, server, j, i, server->players[i]->uuid, 155,
+			    server->players[i]->loc.x, server->players[i]->loc.y, server->players[i]->loc.z,
+			    server->players[i]->loc.pitch, server->players[i]->loc.yaw, server->players[i]->loc.yaw/1.41, 0, 0, 0, 0);
+	}
+    }
+  }
+}
+
+void tick_callback(simple_server *server) {
+  for (int i = 0; i < server->max_players; i++) {
+    if (server->player_slots[i]) {
+      player* m_player = server->players[i];
+      if(m_player->conn.connection_state == 4) {
+	/* if(total_ticks % 5 == 0) // like, 1 seconds */
+	/*   teleport_player(server, i, 0, y++, 0); */
+
+	// send keepalives
+	if(total_ticks % 400 == 0) {// like, 16 seconds
+	  //send_all_players_to_players(server);
+	  clientbound_keep_alive alive;
+	  alive.id = total_ticks;
+	  uint8_t *packet_ptr = write_buf+4;
+	  uint32_t max = 0;
+	  write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, CLIENTBOUND_KEEP_ALIVE_PLAY_ID);
+	  write_clientbound_keep_alive(&packet_ptr, &max, WRITE_BUF_SIZE, alive);
+	  send_packet(write_buf, max, m_player->conn.fd);
+	}
+      }
+    }
+  }
+  total_ticks++;
+
+  // read fron console
+  read_console_command(server);
+}
+
+void on_move_cb(simple_server *server, int player_num, mc_location old_location, mc_location new_location) {
+  //player *m_player = server->players[player_num];
+
+
+  for(int j = 0; j < server->max_players; j++)
+    if(server->player_slots[j] &&
+       server->players[j]->conn.connection_state == 4 &&
+       j != player_num) {
+      send_update_entity_posrot(write_buf, WRITE_BUF_SIZE, server, j, player_num, new_location.x, new_location.y, new_location.z, old_location.x, old_location.y, old_location.z, new_location.yaw, new_location.pitch, true);
+      send_set_head_rotation(write_buf, WRITE_BUF_SIZE, server, j, player_num, new_location.yaw);
+    }
+
+  uint8_t crossed_x_chunk_bound = ((int)new_location.x%16 == 0 && (int)old_location.x%16 != 0);
+  uint8_t crossed_z_chunk_bound = ((int)new_location.z%16 == 0 && (int)old_location.z%16 != 0);
+  
+  /* printf("username: %s\n  x: %lf\n  y: %lf\n  z: %lf\n  pitch: %f\n  yaw: %f\n  x: %lf\n  y: %lf\n  z: %lf\n  pitch: %f\n  yaw: %f\n", */
+  /* 	   m_player->username, */
+  /* 	   m_player->loc.x, */
+  /* 	   m_player->loc.y, */
+  /* 	   m_player->loc.z, */
+  /* 	   m_player->loc.pitch, */
+  /* 	   m_player->loc.yaw, */
+  /* 	   old_location.x, */
+  /* 	   old_location.y, */
+  /* 	   old_location.z, */
+  /* 	   old_location.pitch, */
+  /* 	   old_location.yaw) */ ;
+
+  if((old_location.x != new_location.x && old_location.z != new_location.z) && (crossed_x_chunk_bound || crossed_z_chunk_bound)) { // crossed a chunk boundry
+    //printf("more_than_16: %f, %f\n", old_location.z - new_location.z, old_location.x - new_location.x);
+    int8_t direction[2] = {0, 0};
+    if(crossed_x_chunk_bound)
+      direction[0] = (new_location.x < old_location.x) ? -1 : 1;
+    if(crossed_z_chunk_bound)
+      direction[1] = (new_location.z < old_location.z) ? -1 : 1;
+
+    int new_chunk_x = (int)round(new_location.x/16);
+    int new_chunk_z = (int)round(new_location.z/16);
+    /* new_chunk_x += direction[0]+WORLD_GEN_LIMIT; */
+    /* new_chunk_z += direction[1]+WORLD_GEN_LIMIT; */
+    send_set_center_chunk(write_buf, WRITE_BUF_SIZE, server, player_num, new_chunk_x, new_chunk_z);
+    int to_add_x = direction[0]*WORLD_GEN_LIMIT;
+    int final_x = new_chunk_x + to_add_x;
+
+    int to_add_z = direction[1]*WORLD_GEN_LIMIT;
+    int final_z = new_chunk_z + to_add_z;
+
+    /* if(final_x > 0) */
+    /*   final_x -= 1; */
+    /* if(final_z > 0) */
+    /*   final_z -= 1; */
+    for(int j = -1; j < 1; j++)
+      for(int i = -WORLD_GEN_LIMIT-1; i < WORLD_GEN_LIMIT+1; i++) {
+	if(direction[1] != 0)
+	  send_chunks(server, player_num, new_chunk_x+i, final_z-(j*direction[1]));
+	if(direction[0] != 0)
+	  send_chunks(server, player_num, final_x-(j*direction[0]), new_chunk_z+i);
+      }
+
+      //printf("%d, %d\n", final_x, final_z);
+  }
+  
+};
+
+
+
+void finish_configuration_cb(simple_server *server, int player_num) {
+  printf("%s joined the game!\n", server->players[player_num]->username);
+  // update tab list
+  if(server->players[player_num]->conn.connection_state == 4) {
+
+    // send them a login play packet, chunks, and their spawn
+    {
+      login_play play;
+      play.eid = player_num;
+      play.is_hardcore = 0;
+      lstr dim_names[] = { lstr_static("minecraft:overworld") };
+      play.dimension_names = &*dim_names;
+      play.dimension_name_count = 1;
+      play.max_players = 1;
+      play.view_distance = WORLD_GEN_LIMIT;
+      play.simulation_distance = 10;
+      play.reduced_debug_info = false;
+      play.enable_respawn_screen = false;
+      play.do_limited_crafting = false;
+      play.dimension_type = 0;
+      play.dimension_name = lstr_static("minecraft:overworld");
+      play.hashed_seed = 0;
+      play.game_mode = 1;
+      play.prev_game_mode = -1;
+      play.is_debug = false;
+      play.is_flat = true;
+      play.has_death_location = false;
+      play.portal_cooldown = 10;
+      play.sea_level = 10;
+      play.enforces_secure_chat = false;
+
+      uint8_t *packet_ptr = write_buf+4;
+      uint32_t max = 0;
+      write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, LOGIN_PLAY_ID);
+      write_login_play(&packet_ptr, &max, WRITE_BUF_SIZE, play);
+      send_packet(write_buf, max, server->players[player_num]->conn.fd);
+
+    }
+    send_game_event(write_buf, WRITE_BUF_SIZE, server, player_num, 13, 0.0);
+    send_set_center_chunk(write_buf, WRITE_BUF_SIZE, server, player_num, 0, 0);
+    teleport_player(write_buf, WRITE_BUF_SIZE, server, player_num, 8.5, 70, 8.5, 0, 0, 0);
+    for(int x = -WORLD_GEN_LIMIT-1; x < WORLD_GEN_LIMIT+1; x++)
+      for(int y = -WORLD_GEN_LIMIT-1; y < WORLD_GEN_LIMIT+1; y++)
+	send_chunks(server, player_num, x, y);
+
+    update_tab_list(write_buf, WRITE_BUF_SIZE, server);
+    send_all_players_to_players(server);
+
+    //uuid rand_uuid = (uuid){ 0, 0 }; // funny trick
+  }
+}
+
+
+int main(void)
+{
+  stdin_fd = fileno(stdin); // Get file descriptor for stdin
+  fcntl(stdin_fd, F_SETFL, fcntl(stdin_fd, F_GETFL) | O_NONBLOCK);
+  simple_server *server =  allocate_simple_server(MAX_PLAYERS);
+  puts("starting server");
+  simple_server_callback cb = (simple_server_callback){ handle_packet_cb, tick_callback, finish_configuration_cb, on_move_cb };
+  
+  start_server(server, PORT, cb);
+  fcntl(stdin_fd, F_SETFL, fcntl(stdin_fd, F_GETFL) & ~O_NONBLOCK);
+}
+
+
+
+// send basic world data
+
+
 // utility senders
-void teleport_player(simple_server *server, int player_num, double x, double y, double z, double vx, double vy, double vz) {
-  syncronize_player_position packet;
-  packet.teleport_id = 10;
-  server->players[player_num]->loc.x = x;
-  server->players[player_num]->loc.y = y;
-  server->players[player_num]->loc.z = z;
-  packet.x = x;
-  packet.y = y;
-  packet.z = z;
-  packet.velocity_x = vx;
-  packet.velocity_y = vy;
-  packet.velocity_z = vz;
-  packet.yaw = 0.0;
-  packet.pitch = 0.0;
-  packet.flags = 0;
-
-  uint8_t *packet_ptr = write_buf+4;
-  uint32_t max = 0;
-  write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, SYNCRONIZE_PLAYER_POSITION_ID);
-  write_syncronize_player_position(&packet_ptr, &max, WRITE_BUF_SIZE, packet);
-  send_packet(write_buf, max, server->players[player_num]->conn.fd);
-}
-
-void send_spawn_entity(simple_server *server, int player_num, int32_t entity_id, uuid entity_uuid, int32_t type, double x, double y, double z, uint8_t pitch, uint8_t yaw, uint8_t head_yaw, int32_t data, double velocity_x, double velocity_y, double velocity_z) {
-  spawn_entity packet;
-  packet.eid = entity_id;
-  packet.entity_uuid = entity_uuid;
-  packet.type = type;
-  packet.x = x;
-  packet.y = y;
-  packet.z = z;
-  packet.pitch = pitch/1.41;
-  packet.yaw = yaw/1.41;
-  packet.head_angle = head_yaw/1.41;
-  packet.velocity.x = velocity_x;
-  packet.velocity.y = velocity_y;
-  packet.velocity.z = velocity_z;
-  packet.data = data;
-
-  uint8_t *packet_ptr = write_buf+4;
-  uint32_t max = 0;
-  write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, SPAWN_ENTITY_ID);
-  write_spawn_entity(&packet_ptr, &max, WRITE_BUF_SIZE, packet);
-  send_packet(write_buf, max, server->players[player_num]->conn.fd);
-}
-
-void send_game_event(simple_server *server, int player_num, uint8_t event, float value) {
-  game_event packet;
-  packet.event_id = event;
-  packet.value = value;
-  uint8_t *packet_ptr = write_buf+4;
-  uint32_t max = 0;
-  
-  write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, GAME_EVENT_ID);
-  write_game_event(&packet_ptr, &max, WRITE_BUF_SIZE, packet);
-  send_packet(write_buf, max, server->players[player_num]->conn.fd);
-}
-
-void send_set_head_rotation(simple_server *server, int player_num, int32_t eid, float value) {
-  set_head_rotation packet;
-  packet.entity_id = eid;
-  packet.yaw = value/1.41;
-  uint8_t *packet_ptr = write_buf+4;
-  uint32_t max = 0;
-  
-  write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, SET_HEAD_ROTATION_ID);
-  write_set_head_rotation(&packet_ptr, &max, WRITE_BUF_SIZE, packet);
-  send_packet(write_buf, max, server->players[player_num]->conn.fd);
-}
-
-void send_set_center_chunk(simple_server *server, int player_num, int32_t x, int32_t y) {
-  set_center_chunk packet;
-  packet.x = x;
-  packet.y = y;
-  uint8_t *packet_ptr = write_buf+4;
-  uint32_t max = 0;
-  
-  write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, SET_CENTER_CHUNK_ID);
-  int error = write_set_center_chunk(&packet_ptr, &max, WRITE_BUF_SIZE, packet);
-  send_packet(write_buf, max, server->players[player_num]->conn.fd);
-  if(error)
-    printf("error setting center chunk: %d\n", error);
-}
-
-void send_update_entity_posrot(simple_server *server, int player_num, int eid, double x, double y, double z, double prev_x, double prev_y, double prev_z, float yaw, float pitch, uint8_t on_ground) {
-  update_entity_position_and_rotation packet;
-  packet.entity_id = eid;
-  packet.delta_x = x * 4096 - prev_x * 4096;
-  packet.delta_y = y * 4096 - prev_y * 4096;
-  packet.delta_z = z * 4096 - prev_z * 4096;
-  packet.pitch = pitch/1.41;
-  packet.yaw = yaw/1.41;
-  packet.on_ground = on_ground;
-  uint8_t *packet_ptr = write_buf+4;
-  uint32_t max = 0;
-  
-  write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, UPDATE_ENTITY_POSITION_AND_ROTATION_ID);
-  int error = write_update_entity_position_and_rotation(&packet_ptr, &max, WRITE_BUF_SIZE, packet);
-  /* print_set_entity_velocity(packet, 0); */
-  send_packet(write_buf, max, server->players[player_num]->conn.fd);
-  if(error)
-    printf("error setting center chunk: %d\n", error);
-}
-
-
-
-
-
- 
-
-

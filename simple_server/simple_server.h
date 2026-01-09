@@ -44,4 +44,3 @@ simple_server* allocate_simple_server(int max_players);
 int start_server(simple_server *server, int port, simple_server_callback cb);
 
 
-void update_tab_list(simple_server *server);
