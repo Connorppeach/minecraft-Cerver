@@ -18,7 +18,10 @@
 
 // settings
 #define MAX_PLAYERS 10
-#define WORLD_GEN_LIMIT 5
+#define WORLD_GEN_LIMIT 32
+
+#define VIEW_DISTANCE 5
+
 // world gen settings
 // cave settings
 #define CAVE_SCALE 0.2
@@ -32,8 +35,8 @@
 
 #define BIOME_SCALE 1024
 
-
-
+int32_t world_data[WORLD_GEN_LIMIT*2][WORLD_GEN_LIMIT*2][4096*24];
+uint8_t has_generated_chunk[WORLD_GEN_LIMIT*2][WORLD_GEN_LIMIT*2] = { 0 };
 
 char buffer[CONSOLE_READ_BUF_SIZE];
 int stdin_fd;
@@ -44,39 +47,43 @@ uint64_t get_hash_at_point(int x, int y, int z, int seed) {
   int to_hash[3] = { x, y, z };
   return komihash(to_hash, sizeof(to_hash), seed);
 }
+
 void send_chunks(simple_server *server, int player_num, int32_t x, int32_t z) {
-  int32_t chunk_data[4096*24];
+  if(-WORLD_GEN_LIMIT+1 > x || WORLD_GEN_LIMIT < x || -WORLD_GEN_LIMIT+1 > z || WORLD_GEN_LIMIT < z) return;
+  int32_t *chunk_data = world_data[x+(WORLD_GEN_LIMIT/2)][z+(WORLD_GEN_LIMIT/2)];
   /* for(int i = 0; i < 4096*24; i++) */
   /*   chunk_data[i] = MINECRAFT_AIR; */
-  fnl_state noise_2d = fnlCreateState();
-  noise_2d.noise_type = FNL_NOISE_PERLIN;
-  noise_2d.frequency = 0.05;
+  if(!has_generated_chunk[x+(WORLD_GEN_LIMIT/2)][z+(WORLD_GEN_LIMIT/2)]) {
+    has_generated_chunk[x+(WORLD_GEN_LIMIT/2)][z+(WORLD_GEN_LIMIT/2)] = 1;
+    fnl_state noise_2d = fnlCreateState();
+    noise_2d.noise_type = FNL_NOISE_PERLIN;
+    noise_2d.frequency = 0.05;
 
 
-  fnl_state noise_2d_2 = fnlCreateState();
-  noise_2d_2.noise_type = FNL_NOISE_PERLIN;
-  noise_2d_2.frequency = 0.05;
-  noise_2d_2.seed = 21;
+    fnl_state noise_2d_2 = fnlCreateState();
+    noise_2d_2.noise_type = FNL_NOISE_PERLIN;
+    noise_2d_2.frequency = 0.05;
+    noise_2d_2.seed = 21;
   
-  fnl_state noise_caves = fnlCreateState();
-  noise_caves.noise_type = FNL_NOISE_OPENSIMPLEX2;
-  noise_caves.domain_warp_type = FNL_DOMAIN_WARP_OPENSIMPLEX2;
-  noise_caves.domain_warp_amp = 3.0;
-  noise_caves.octaves = 2;
+    fnl_state noise_caves = fnlCreateState();
+    noise_caves.noise_type = FNL_NOISE_OPENSIMPLEX2;
+    noise_caves.domain_warp_type = FNL_DOMAIN_WARP_OPENSIMPLEX2;
+    noise_caves.domain_warp_amp = 3.0;
+    noise_caves.octaves = 2;
   
-  float heightmap[16][16];
-  float biome_map[16][16];
-  for(int x2 = 0; x2 < 16; x2++)
-    for(int z2 = 0; z2 < 16; z2++){
-      heightmap[x2][z2] = ((fnlGetNoise2D(&noise_2d, ((float)(x*16)+x2)/HEIGHTMAP_XZ_SCALE, ((float)(z*16)+z2)/HEIGHTMAP_XZ_SCALE)+1)/2)*HEIGHTMAP_INITIAL_HEIGHT_MAX;
-      heightmap[x2][z2] *= ((fnlGetNoise2D(&noise_2d_2, ((float)(x*16)+x2)/HEIGHTMAP_XZ_MULT_SCALE, ((float)(z*16)+z2)/HEIGHTMAP_XZ_MULT_SCALE)+1)/2);
-      heightmap[x2][z2] += HEIGHTMAP_Y_ADD;
+    float heightmap[16][16];
+    float biome_map[16][16];
+    for(int x2 = 0; x2 < 16; x2++)
+      for(int z2 = 0; z2 < 16; z2++){
+	heightmap[x2][z2] = ((fnlGetNoise2D(&noise_2d, ((float)(x*16)+x2)/HEIGHTMAP_XZ_SCALE, ((float)(z*16)+z2)/HEIGHTMAP_XZ_SCALE)+1)/2)*HEIGHTMAP_INITIAL_HEIGHT_MAX;
+	heightmap[x2][z2] *= ((fnlGetNoise2D(&noise_2d_2, ((float)(x*16)+x2)/HEIGHTMAP_XZ_MULT_SCALE, ((float)(z*16)+z2)/HEIGHTMAP_XZ_MULT_SCALE)+1)/2);
+	heightmap[x2][z2] += HEIGHTMAP_Y_ADD;
 
-      biome_map[x2][z2] = ((fnlGetNoise2D(&noise_2d, ((float)(x*16)+x2)/BIOME_SCALE, ((float)(z*16)+z2)/BIOME_SCALE)+1)/2);
-    }
-  
-  for(int i = 0; i < 24; i++) {
-    // write chunk data to our array
+	biome_map[x2][z2] = ((fnlGetNoise2D(&noise_2d, ((float)(x*16)+x2)/BIOME_SCALE, ((float)(z*16)+z2)/BIOME_SCALE)+1)/2);
+      }
+
+    for(int i = 0; i < 24; i++) {
+      // write chunk data to our array
       for(int local_y = 0; local_y < 16; local_y++) {
 	float block_y = (i*16)+local_y;
 	for(int local_z = 0; local_z < 16; local_z++) {
@@ -119,11 +126,8 @@ void send_chunks(simple_server *server, int player_num, int32_t x, int32_t z) {
 	  }
 	}
       }
-
-      
-    
-    
-  }
+    }
+  } 
   send_chunk_packet(write_buf, WRITE_BUF_SIZE, server->players[player_num]->conn.fd, chunk_data, 24, x, z);
 }
 void send_set_entity_metadata(uint8_t *write_buf, int32_t write_buf_size, simple_server *server, int player_num, int32_t entity_id, entity_metadata meta) {
@@ -344,7 +348,7 @@ int main(void)
   stdin_fd = fileno(stdin); // Get file descriptor for stdin
   fcntl(stdin_fd, F_SETFL, fcntl(stdin_fd, F_GETFL) | O_NONBLOCK);
   simple_server *server =  allocate_simple_server(MAX_PLAYERS);
-  server->world_data.view_distance = WORLD_GEN_LIMIT;
+  server->world_data.view_distance = VIEW_DISTANCE;
   puts("starting server");
   simple_server_callback cb = (simple_server_callback){ handle_packet_cb, tick_callback, finish_configuration_cb, send_chunks, on_move_cb };
   
