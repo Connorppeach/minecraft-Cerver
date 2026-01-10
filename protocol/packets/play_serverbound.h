@@ -68,6 +68,15 @@ PACKET(player_input,
        R(ubyte, uint8_t, flags);
        );
 
+PACKET(chat_message,
+       R(var_str, lstr, message);
+       R(long, int64_t, timestamp);
+       R(long, int64_t, salt);
+       R(bool, uint8_t, has_signature);// todo -- signature
+       R(var_int, int32_t, message_count);
+       // todo -- rest of package
+       );
+
 PACKET(confirm_teleportation,
        R(var_int, int32_t, teleport_id);
        );

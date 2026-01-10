@@ -93,7 +93,7 @@ void print_position(position value, int indentation);
 #define free_var_str(x) 0
 #define free_short(x) 0
 #define free_ushort(x) 0
-#define free_network_nbt(x) nbt_free_tag(*x)
+#define free_network_nbt(x) nbt_free_tag(x)
 #define free_long(x) 0
 #define free_byte(x) 0
 #define free_ubyte(x) 0

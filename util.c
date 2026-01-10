@@ -18,6 +18,23 @@ void update_tab_list(uint8_t *write_buf_simple_server, int32_t WRITE_BUF_SIMPLE_
     }
   }
 }
+nbt_tag_t *lstr2text_component(lstr text) {
+  return nbt_new_tag_string(text.str, text.len);
+}
+lstr lstr_append(lstr text_1, lstr text_2) {
+  int total_len = text_1.len + text_2.len;
+  lstr ret;
+  ret.str = malloc(total_len);
+  ret.len = total_len;
+  for(int i = 0; i < total_len; i++) {
+    if(i < text_1.len) {
+      ret.str[i] = text_1.str[i];
+    } else
+      ret.str[i] = text_2.str[i-text_1.len];
+  }
+  
+  return ret;
+}
 void teleport_player(uint8_t *write_buf, int32_t WRITE_BUF_SIZE, simple_server *server, int player_num, double x, double y, double z, double vx, double vy, double vz) {
   syncronize_player_position packet;
   packet.teleport_id = 10;
@@ -38,6 +55,18 @@ void teleport_player(uint8_t *write_buf, int32_t WRITE_BUF_SIZE, simple_server *
   uint32_t max = 0;
   write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, SYNCRONIZE_PLAYER_POSITION_ID);
   write_syncronize_player_position(&packet_ptr, &max, WRITE_BUF_SIZE, packet);
+  send_packet(write_buf, max, server->players[player_num]->conn.fd);
+}
+
+
+void send_system_chat_message(uint8_t *write_buf, int32_t WRITE_BUF_SIZE, simple_server *server, int player_num, nbt_tag_t *text_component, uint8_t overlay) {
+  system_chat_message packet;
+  packet.overlay = overlay;
+  packet.content = text_component;
+  uint8_t *packet_ptr = write_buf+4;
+  uint32_t max = 0;
+  write_var_int(&packet_ptr, &max, WRITE_BUF_SIZE, SYSTEM_CHAT_MESSAGE_ID);
+  write_system_chat_message(&packet_ptr, &max, WRITE_BUF_SIZE, packet);
   send_packet(write_buf, max, server->players[player_num]->conn.fd);
 }
 

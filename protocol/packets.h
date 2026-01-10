@@ -84,7 +84,7 @@
 
 #define O(type, field_type, field_name)					\
   if(out.field_name != NULL) {						\
-    free_##type(out.field_name);				\
+  free_##type(*out.field_name);						\
   }
 
 

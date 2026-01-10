@@ -10,8 +10,8 @@
 #include "include/FastNoiseLite.h"
 #include "include/komihash.h"
 #include "util.h"
-
-
+#define FILTER_IMPLEMENTATION
+#include "filter.h"
 #define PORT 25545   // port we're listening on
 #define WRITE_BUF_SIZE 40000
 #define CONSOLE_READ_BUF_SIZE 256
@@ -140,7 +140,39 @@ void send_set_entity_metadata(uint8_t *write_buf, int32_t write_buf_size, simple
 }
 void handle_packet_cb(simple_server *server, int player_num, int packet_type, uint8_t *packet_buf, unsigned int buf_len) {
   player* m_player = server->players[player_num];
+  if(m_player->conn.connection_state != 4) return;
   uint32_t pos = 0;
+  if (packet_type == CHAT_MESSAGE_ID) {
+    uint8_t should_send = 1;
+    chat_message packet;
+    read_chat_message(&packet_buf, &pos, buf_len, &packet);
+    int filter_res = filter_str(packet.message.str, packet.message.len);
+    if (filter_res) {
+      should_send = 0;
+      puts("didnt send: ");
+    }
+    lstr username = lstr_static(m_player->username);
+    lstr delim = lstr_static(": ");
+    lstr username_and_delim = lstr_append(username, delim);
+
+    lstr message = lstr_append(username_and_delim, packet.message);
+    free(username_and_delim.str);
+    
+    print_var_str(message, 0);
+    
+    nbt_tag_t *message_component = lstr2text_component(message);
+    free(message.str);
+    if(should_send)
+      for(int i = 0; i < server->max_players; i++) {
+	if(server->player_slots[i] != NULL) {
+	  send_system_chat_message(write_buf, WRITE_BUF_SIZE, server, i, message_component, 0);        
+	}
+      }
+    nbt_free_tag(message_component);
+    
+    puts("");
+    free_chat_message(packet);
+  }
   if (packet_type == PLAYER_INPUT_ID) {
     player_input packet;
     read_player_input(&packet_buf, &pos, buf_len, &packet);
@@ -304,6 +336,11 @@ void finish_configuration_cb(simple_server *server, int player_num) {
 
 int main(void)
 {
+  int filter_error = init_filter();
+  if(filter_error) {
+    printf("filter error: %d\nnot starting the server without the filter\n", filter_error);
+    return 1;
+  }
   stdin_fd = fileno(stdin); // Get file descriptor for stdin
   fcntl(stdin_fd, F_SETFL, fcntl(stdin_fd, F_GETFL) | O_NONBLOCK);
   simple_server *server =  allocate_simple_server(MAX_PLAYERS);

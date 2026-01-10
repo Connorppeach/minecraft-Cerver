@@ -4,3 +4,6 @@ void send_spawn_entity(uint8_t *write_buf, int32_t WRITE_BUF_SIZE, simple_server
 void send_update_entity_posrot(uint8_t *write_buf, int32_t WRITE_BUF_SIZE, simple_server *server, int player_num, int eid, double x, double y, double z, double prev_x, double prev_y, double prev_z, float yaw, float pitch, uint8_t on_ground);
 void send_set_head_rotation(uint8_t *write_buf, int32_t WRITE_BUF_SIZE, simple_server *server, int player_num, int32_t eid, float value);
 void update_tab_list(uint8_t *write_buf, int32_t WRITE_BUF_SIZE, simple_server *server);
+lstr lstr_append(lstr text_1, lstr text_2);
+nbt_tag_t *lstr2text_component(lstr text);
+void send_system_chat_message(uint8_t *write_buf, int32_t WRITE_BUF_SIZE, simple_server *server, int player_num, nbt_tag_t *text_component, uint8_t overlay);
