@@ -112,7 +112,7 @@ int handle_player_packet(simple_server *server, int player_num, uint8_t *packet_
   unsigned int pos = 0;
   int error = read_var_int(&packet_buf, &pos, buf_len, &packet_type);
   if(error) {
-    printf("error in client: %d\n", error);
+    printf("error in client, %d\n", error);
     deallocate_player(server, player_num);
     return 1;
   }
@@ -839,7 +839,6 @@ int handle_player_packet(simple_server *server, int player_num, uint8_t *packet_
 	write_var_int(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, LOGIN_PLAY_ID);
 	write_login_play(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, play);
 	send_packet(write_buf_simple_server, max, server->players[player_num]->conn.fd);
-
       }      
       if(cb.finish_login_play)
 	cb.finish_login_play(server, player_num);
@@ -954,7 +953,7 @@ void handle_packet(simple_server *server, int player_num, uint8_t *buf, int nbyt
     //if(read_buf_2) free(read_buf_2);
     return;
   }
-  int left = nbytes-packet_len-1;
+  int left = nbytes-packet_len-pos;
   uint8_t more = left>0;
   uint8_t *left_off = read_buf+packet_len;
   //printf("packet len: %d\nleft: %d\n", packet_len, left);
