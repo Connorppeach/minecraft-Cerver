@@ -160,37 +160,33 @@ int handle_player_packet(simple_server *server, int player_num, uint8_t *packet_
       m_player->username[i++] = 0;
       m_player->uuid = login_s.uuid;
       //puts("\nplayer login\n");
-      uint8_t *packet_ptr = write_buf_simple_server+4;
 
       // you shall not pass
       //disconnect_player(player_num);
 
       // you may pass
-      write_var_int(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, LOGIN_SUCCESS_ID);
-      write_login_success(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, (login_success){{login_s.uuid, login_s.name, NULL, 0}});
-      send_packet(write_buf_simple_server, max, m_player->conn.fd);
+      send_login_success_packet(write_buf_simple_server,
+				WRITE_BUF_SIMPLE_SERVER_SIZE,
+				server->players[player_num]->conn.fd,
+				(login_success){{login_s.uuid, login_s.name, NULL, 0}});
       free_login_start(login_s);
       
     } else if (packet_type == LOGIN_ACKNOWLEDGED_ID) {
       //puts("\nlogin finish\n");
       m_player->conn.connection_state = 3;
-      uint8_t *packet_ptr = write_buf_simple_server+4;
-      write_var_int(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, CLIENTBOUND_KNOWN_PACKS_ID);
       known_pack packs[] = { (known_pack){lstr_static("minecraft"), lstr_static("core"), lstr_static("1.21.11")} };
-      write_clientbound_known_packs(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, (clientbound_known_packs){packs, 1});
-      //print_clientbound_known_packs((clientbound_known_packs){packs, 1});
-      send_packet(write_buf_simple_server, max, m_player->conn.fd);
-      // send moar
+
+      send_clientbound_known_packs_packet(write_buf_simple_server,
+					  WRITE_BUF_SIMPLE_SERVER_SIZE,
+					  server->players[player_num]->conn.fd,
+					  (clientbound_known_packs){packs, 1});
+
     } 
   } else if (m_player->conn.connection_state == 3) {
     if (packet_type == CLIENT_INFORMATION_CONFIGURATION_ID) {
-      //puts("\nplayer enter config\n");
-      //
       client_information_configuration config_s;
       read_client_information_configuration(&buf_ptr, &pos, buf_len, &config_s);
       free_client_information_configuration(config_s);
-      //print_client_information_configuration(config_s);
-      // send our known packs
       
     } else if (packet_type == SERVERBOUND_KNOWN_PACKS_CONFIGURATION_ID) {
       serverbound_known_packs config_s;
@@ -834,11 +830,7 @@ int handle_player_packet(simple_server *server, int player_num, uint8_t *packet_
 	play.sea_level = 10;
 	play.enforces_secure_chat = 0;
 
-	uint8_t *packet_ptr = write_buf_simple_server+4;
-	uint32_t max = 0;
-	write_var_int(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, LOGIN_PLAY_ID);
-	write_login_play(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, play);
-	send_packet(write_buf_simple_server, max, server->players[player_num]->conn.fd);
+	send_login_play_packet(write_buf_simple_server, WRITE_BUF_SIMPLE_SERVER_SIZE, m_player->conn.fd, play);
       }      
       if(cb.finish_login_play)
 	cb.finish_login_play(server, player_num);

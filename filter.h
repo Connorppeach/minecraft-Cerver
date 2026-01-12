@@ -1409,9 +1409,9 @@ int init_filter() {
   for(int i = 0; i < sizeof(filter_list)/sizeof(filter_list[0]); i++) {
     int error = 0;
     size_t erroroffset = 0;
-    filter_codes[i] = pcre2_compile(filter_list[i], strlen(filter_list[i]), 0, &error, &erroroffset, NULL);
+    filter_codes[i] = pcre2_compile((const unsigned char*)filter_list[i], strlen(filter_list[i]), 0, &error, &erroroffset, NULL);
     if(filter_codes[i] == NULL) {
-      pcre2_get_error_message(error, error_buf, 512);
+      pcre2_get_error_message(error, (unsigned char *)error_buf, 512);
       printf("error: \"%s\" at regex %s\n", error_buf, filter_list[i]);
       return 1;
     }

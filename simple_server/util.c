@@ -143,3 +143,16 @@ void send_set_center_chunk(uint8_t *write_buf, int32_t WRITE_BUF_SIZE, int fd, i
   if(error)
     printf("error setting center chunk: %d\n", error);
 }
+
+#define PACKET(name, ...)
+#define PACKET_ID(name, id) void send_##name##_packet(uint8_t *write_buf, int buffer_len, int fd, name data) { \
+  uint8_t *packet_ptr = write_buf+4;					\
+  uint32_t max = 0;							\
+  write_var_int(&packet_ptr, &max, buffer_len, id);			\
+  write_##name(&packet_ptr, &max, buffer_len, data);			\
+  send_packet(write_buf, max, fd);					\
+									\
+  }
+#include "../protocol/all_packets.h"
+#undef PACKET
+#undef PACKET_ID

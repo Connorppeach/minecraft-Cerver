@@ -4,3 +4,6 @@
 main
 main_tcc
 deploy.sh
+# this is just to stop getting results from it in ripgrep
+flecs_server/flecs/
+libnbt/
