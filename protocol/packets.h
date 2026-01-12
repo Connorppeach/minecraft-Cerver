@@ -17,6 +17,11 @@
   __VA_ARGS__								\
     return 0;								\
   }
+#define PACKET_INNER(name, ...)						\
+  {									\
+    __VA_ARGS__								\
+  }
+
 // standard field
 #define R(type, field_type, field_name)					\
   error = read_##type(packet_buffer, pos, max, &out->field_name);	\
@@ -51,6 +56,12 @@
     __VA_ARGS__								\
     return 0;								\
   }
+
+#define PACKET_INNER(name, ...)						\
+  {									\
+    __VA_ARGS__								\
+  }
+
 #define R(type, field_type, field_name)					\
   error = write_##type(packet_buffer, pos, max, out.field_name);	\
   if(error) return error;
@@ -106,6 +117,13 @@
       puts("");								\
   }
 
+#define PACKET_INNER(name, ...)						\
+  {									\
+    __VA_ARGS__								\
+  }
+
+
+
 #define R(type, field_type, field_name)					\
   for (int j = 0; j < indentation+2; j++) {				\
     printf(" ");							\
@@ -146,6 +164,13 @@
   int write_##name (uint8_t **packet_buffer, unsigned int *pos, unsigned int max, name out); \
   int free_##name (name out);						\
   void print_##name (name out, int indentation); 
+
+#define PACKET_INNER(name, ...)						\
+  struct name##_s {							\
+    __VA_ARGS__								\
+  } name;								
+
+
 #define R(type, field_type, field_name)		\
   field_type field_name
 
