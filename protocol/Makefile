@@ -13,4 +13,4 @@ packets.o: packets.c
 	$(CC) -c $< $(CFLAGS) -o $@ -O2 # make packets(mostly for chunks) fast
 
 clean:
-	rm *.o *.a
+	rm -f *.o *.a

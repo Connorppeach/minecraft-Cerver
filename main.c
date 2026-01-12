@@ -35,6 +35,8 @@
 
 #define BIOME_SCALE 1024
 
+#define WORLD_SEED 124
+
 int32_t world_data[WORLD_GEN_LIMIT*2][WORLD_GEN_LIMIT*2][4096*24];
 uint8_t has_generated_chunk[WORLD_GEN_LIMIT*2][WORLD_GEN_LIMIT*2] = { 0 };
 
@@ -58,19 +60,19 @@ void send_chunks(simple_server *server, int player_num, int32_t x, int32_t z) {
     fnl_state noise_2d = fnlCreateState();
     noise_2d.noise_type = FNL_NOISE_PERLIN;
     noise_2d.frequency = 0.05;
-
+    noise_2d.seed = WORLD_SEED+3;
 
     fnl_state noise_2d_2 = fnlCreateState();
     noise_2d_2.noise_type = FNL_NOISE_PERLIN;
     noise_2d_2.frequency = 0.05;
-    noise_2d_2.seed = 21;
+    noise_2d_2.seed = WORLD_SEED+21;
   
     fnl_state noise_caves = fnlCreateState();
     noise_caves.noise_type = FNL_NOISE_OPENSIMPLEX2;
     noise_caves.domain_warp_type = FNL_DOMAIN_WARP_OPENSIMPLEX2;
     noise_caves.domain_warp_amp = 3.0;
     noise_caves.octaves = 2;
-  
+    noise_caves.seed = WORLD_SEED+32;
     float heightmap[16][16];
     float biome_map[16][16];
     for(int x2 = 0; x2 < 16; x2++)
@@ -106,7 +108,7 @@ void send_chunks(simple_server *server, int player_num, int32_t x, int32_t z) {
 	      if (noise1*cave_multiplier > 0.45) {//noise2 < 0.5 && 
 	        chunk_data[idx] = MINECRAFT_AIR;
 	      } else {
-		uint64_t hash1 = get_hash_at_point((int)block_x, (int)block_y, (int)block_z, 0);
+		uint64_t hash1 = get_hash_at_point((int)block_x, (int)block_y, (int)block_z, WORLD_SEED);
 		chunk_data[idx] = MINECRAFT_STONE;
 		int ore_to_spawn = (hash1&255);
 		if(ore_to_spawn == 0)
@@ -305,7 +307,7 @@ void finish_configuration_cb(simple_server *server, int player_num) {
   {
 
     send_game_event(write_buf, WRITE_BUF_SIZE, server, player_num, 13, 0.0);
-    teleport_player(write_buf, WRITE_BUF_SIZE, server, player_num, 8.5, 70, 8.5, 0, 0, 0);
+    teleport_player(write_buf, WRITE_BUF_SIZE, server, player_num, 8.5, 67, 8.5, 0, 0, 0);
     {
       int new_id = MAX_PLAYERS+1;
       uuid temp_uuid = { -1, -1 };
@@ -314,7 +316,7 @@ void finish_configuration_cb(simple_server *server, int player_num) {
 			new_id, // entity id
 			temp_uuid, // uuid
 			5, // entity type
-			8.5, 70, 11, // loc x y z
+			8.5, 66, 11, // loc x y z
 			0, 180, 180,// pitch yaw head yaw
 			0, // data
 			0, 0, 0); // velocity

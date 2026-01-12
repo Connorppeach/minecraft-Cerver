@@ -9,6 +9,10 @@ LDFLAGS = -lm
 main: main.o fast_noise_lite.o util.o protocol/libmcprotocol.a simple_server/libsimple_mc_server.a
 	$(CC) -o $@ $^ $(CFLAGS) $(LDFLAGS) -lpcre2-8
 
+
+main_flecs: main_flecs.o fast_noise_lite.o util.o protocol/libmcprotocol.a simple_server/libsimple_mc_server.a flecs_server/libflecs_mc_server.a
+	$(CC) -o $@ $^ $(CFLAGS) $(LDFLAGS) -lpcre2-8
+
 main_tcc: main_tcc.o util.o simple_server/libsimple_mc_server.a protocol/libmcprotocol.a
 	$(CC) -o $@ $^ $(CFLAGS) $(LDFLAGS) -ltcc
 
@@ -19,6 +23,10 @@ protocol/libmcprotocol.a:
 
 simple_server/libsimple_mc_server.a:
 	$(MAKE) -C simple_server/
+
+flecs_server/libflecs_mc_server.a:
+	$(MAKE) -C flecs_server/
+
 
 fast_noise_lite.o: fast_noise_lite.c 
 	$(CC) -c $< $(CFLAGS) -o $@ -O2 # make noise fast
@@ -33,4 +41,5 @@ test_client: $(OBJ) test_client.o
 clean:
 	rm *.o -f
 	$(MAKE) -C simple_server/ clean
+	$(MAKE) -C flecs_server/ clean
 	$(MAKE) -C protocol/ clean

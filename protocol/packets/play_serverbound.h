@@ -67,6 +67,7 @@
 PACKET(player_input,
        R(ubyte, uint8_t, flags);
        );
+PACKET_ID(player_input, PLAYER_INPUT_ID)
 
 PACKET(chat_message,
        R(var_str, lstr, message);
@@ -76,10 +77,12 @@ PACKET(chat_message,
        R(var_int, int32_t, message_count);
        // todo -- rest of package
        );
+PACKET_ID(chat_message, CHAT_MESSAGE_ID)
 
 PACKET(confirm_teleportation,
        R(var_int, int32_t, teleport_id);
        );
+PACKET_ID(confirm_teleportation, CONFIRM_TELEPORTATION_ID)
 
 PACKET(set_player_position,
        R(double, double, x);
@@ -87,6 +90,8 @@ PACKET(set_player_position,
        R(double, double, z);
        R(byte, int8_t, flags);
        );
+PACKET_ID(set_player_position, SET_PLAYER_POSITION_ID)
+  
 PACKET(set_player_position_and_rotation,
        R(double, double, x);
        R(double, double, y);
@@ -95,9 +100,11 @@ PACKET(set_player_position_and_rotation,
        R(float, float, pitch);
        R(byte, int8_t, flags);
        );
+PACKET_ID(set_player_position_and_rotation, SET_PLAYER_POSITION_AND_ROTATION_ID)
 
 PACKET(set_player_rotation,
        R(float, float, yaw);
        R(float, float, pitch);
        R(byte, int8_t, flags);
        );
+PACKET_ID(set_player_rotation, SET_PLAYER_ROTATION_ID)

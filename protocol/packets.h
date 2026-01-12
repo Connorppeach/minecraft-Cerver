@@ -5,7 +5,7 @@
 #include "rw.h"
 
 
-
+#define PACKET_ID(packet, id)
 
 
 #if defined(PACKET_READ_IMPL)
@@ -170,13 +170,7 @@
 
 
 #if defined(_PACKETS_H_)
-#include "packets/handshake.h"
-#include "packets/login_clientbound.h"
-#include "packets/login_serverbound.h"
-#include "packets/configuration_serverbound.h"
-#include "packets/configuration_clientbound.h"
-#include "packets/play_serverbound.h"
-#include "packets/play_clientbound.h"
+#include "all_packets.h"
 #endif
 
 // general structure for "custom" readers writers and printers
@@ -235,4 +229,4 @@
 
 #endif
 
-
+#undef PACKET_ID

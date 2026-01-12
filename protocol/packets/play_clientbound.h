@@ -167,9 +167,13 @@ PACKET(login_play,
        R(bool, uint8_t, enforces_secure_chat);
        );
 
+PACKET_ID(login_play, LOGIN_PLAY_ID)
+
+
 PACKET(clientbound_keep_alive,
        R(long, int64_t, id);
        );
+PACKET_ID(clientbound_keep_alive, CLIENTBOUND_KEEP_ALIVE_PLAY_ID)
 
 PACKET(syncronize_player_position,
        R(var_int, int32_t, teleport_id);
@@ -183,6 +187,7 @@ PACKET(syncronize_player_position,
        R(float, float, pitch);
        R(int, int32_t, flags);
        );
+PACKET_ID(syncronize_player_position, SYNCRONIZE_PLAYER_POSITION_ID)
 
 PACKET(update_entity_position_and_rotation,
        R(var_int, int32_t, entity_id);
@@ -193,11 +198,13 @@ PACKET(update_entity_position_and_rotation,
        R(ubyte, uint8_t, pitch);
        R(bool, uint8_t, on_ground);
        );
+PACKET_ID(update_entity_position_and_rotation, UPDATE_ENTITY_POSITION_AND_ROTATION_ID)
 
 PACKET(set_head_rotation,
        R(var_int, int32_t, entity_id);
        R(ubyte, uint8_t, yaw);
        );
+PACKET_ID(set_head_rotation, SET_HEAD_ROTATION_ID)
 
 PACKET(update_entity_position,
        R(var_int, int32_t, entity_id);
@@ -206,16 +213,19 @@ PACKET(update_entity_position,
        R(short, int16_t, delta_z);
        R(bool, uint8_t, on_ground);
        );
+PACKET_ID(update_entity_position, UPDATE_ENTITY_POSITION_ID)
 
 PACKET(game_event,
        R(ubyte, uint8_t, event_id);
        R(float, float, value);
        );
+PACKET_ID(game_event, GAME_EVENT_ID)
 
 PACKET(set_center_chunk,
        R(var_int, int32_t, x);
        R(var_int, int32_t, y);
        );
+PACKET_ID(set_center_chunk, SET_CENTER_CHUNK_ID)
 
 PACKET(heightmap,
        R(var_int, int32_t, type);
@@ -367,6 +377,7 @@ PACKET(chunk_data_and_update_light,
        R(var_int, int32_t, o5);
        R(var_int, int32_t, o6);
        );
+PACKET_ID(chunk_data_and_update_light, CHUNK_DATA_AND_UPDATE_LIGHT_ID)
 
 PACKET(spawn_entity,
        R(var_int, int32_t, eid);
@@ -381,10 +392,12 @@ PACKET(spawn_entity,
        R(ubyte, uint8_t, head_angle);
        R(var_int, int32_t, data);
        );
+PACKET_ID(spawn_entity, SPAWN_ENTITY_ID)
 
 PACKET(player_info_remove,
        RL(uuid, uuid, player_ids, player_id_len);
        );
+PACKET_ID(player_info_remove, PLAYER_INFO_REMOVE_ID)
 
 
 
@@ -393,6 +406,8 @@ PACKET(set_entity_velocity,
        R(var_int, int32_t, entity_id);
        R(lpvec3, lpvec3, velocity);
        );
+PACKET_ID(set_entity_velocity, SET_ENTITY_VELOCITY_ID)
+
 PACKET(player_action_add_player_property,
        R(var_str, lstr, name);
        R(var_str, lstr, value);
@@ -488,6 +503,7 @@ PACKET(player_info_update,
        int32_t player_action_count;
 #endif
        );
+PACKET_ID(player_info_update, PLAYER_INFO_UPDATE_ID)
 
 
 PACKET(entity_metadata,
@@ -732,9 +748,11 @@ PACKET(set_entity_metadata,
 #endif
        
        );
+PACKET_ID(set_entity_metadata, SET_ENTITY_METADATA_ID)
 
 
 PACKET(system_chat_message,
        R(network_nbt, nbt_tag_t*, content);
        R(bool, uint8_t, overlay);
        );
+PACKET_ID(system_chat_message, SYSTEM_CHAT_MESSAGE_ID)

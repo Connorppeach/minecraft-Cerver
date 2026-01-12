@@ -150,7 +150,7 @@ int handle_player_packet(simple_server *server, int player_num, uint8_t *packet_
       read_login_start(&buf_ptr, &pos, buf_len, &login_s);
       //print_login_start(login_s);
       int i;
-      for(i = 0; i < 16; i++) {
+      for (i = 0; i < 16; i++) {
 	if(i < login_s.name.len)
 	  m_player->username[i] = login_s.name.str[i];
 	else

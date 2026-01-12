@@ -12,4 +12,5 @@ PACKET(login_start,
        R(var_str, lstr, name);
        R(uuid, uuid, uuid);
        );
+PACKET_ID(login_start, LOGIN_START_ID)
 

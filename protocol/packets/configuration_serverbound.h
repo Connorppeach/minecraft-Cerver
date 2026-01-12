@@ -19,6 +19,7 @@ PACKET(client_information_configuration,
        R(var_int, int32_t, particle_status);
        );
 //
+PACKET_ID(client_information_configuration, CLIENT_INFORMATION_CONFIGURATION_ID)
 
 
 PACKET(known_pack,
@@ -29,6 +30,7 @@ PACKET(known_pack,
 PACKET(serverbound_known_packs,
        RL(known_pack, known_pack, packs, num_packs);
        );
+PACKET_ID(serverbound_known_packs, SERVERBOUND_KNOWN_PACKS_CONFIGURATION_ID)
 
 
 

@@ -22,17 +22,20 @@
 PACKET(clientbound_known_packs,
        RL(known_pack, known_pack, packs, num_packs);
        );
-
+PACKET_ID(clientbound_known_packs, CLIENTBOUND_KNOWN_PACKS_ID)
 
 PACKET(finish_configuration,
        );
-
+PACKET_ID(finish_configuration, FINISH_CONFIGURATION_ID)
 //
 PACKET(registry_data_entry,
        R(var_str, lstr, entry_id);
        O(network_nbt, nbt_tag_t*, data);
        );
+
+
 PACKET(registry_data,
        R(var_str, lstr, registry_id);
        RL(registry_data_entry, registry_data_entry, entries, num_entries);
        );
+PACKET_ID(registry_data, REGISTRY_DATA_ID)

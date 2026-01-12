@@ -23,6 +23,7 @@ PACKET(game_profile,
 PACKET(login_success,
        R(game_profile, game_profile, profile);
        );
+PACKET_ID(login_success, LOGIN_SUCCESS_ID)
 
 
 
@@ -30,3 +31,4 @@ PACKET(login_success,
 PACKET(disconnect_login,
        R(var_str, lstr, json);
        );
+PACKET_ID(disconnect_login, DISCONNECT_LOGIN_ID)
