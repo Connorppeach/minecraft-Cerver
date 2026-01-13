@@ -9,6 +9,7 @@
 
 #include "include/FastNoiseLite.h"
 #include "include/komihash.h"
+#include "include/hashmap.h"
 #include "util.h"
 #define FILTER_IMPLEMENTATION
 #include "filter.h"
@@ -18,7 +19,7 @@
 
 // settings
 #define MAX_PLAYERS 10
-#define WORLD_GEN_LIMIT 32
+#define WORLD_GEN_LIMIT 16
 
 #define VIEW_DISTANCE 5
 
@@ -37,8 +38,7 @@
 
 #define WORLD_SEED 124
 
-int32_t world_data[WORLD_GEN_LIMIT*2][WORLD_GEN_LIMIT*2][4096*24];
-uint8_t has_generated_chunk[WORLD_GEN_LIMIT*2][WORLD_GEN_LIMIT*2] = { 0 };
+struct hashmap_s chunk_data;
 
 char buffer[CONSOLE_READ_BUF_SIZE];
 int stdin_fd;
@@ -50,13 +50,20 @@ uint64_t get_hash_at_point(int x, int y, int z, int seed) {
   return komihash(to_hash, sizeof(to_hash), seed);
 }
 
+
+
+
+
 void send_chunks(simple_server *server, int player_num, int32_t x, int32_t z) {
   if(-WORLD_GEN_LIMIT+1 > x || WORLD_GEN_LIMIT < x || -WORLD_GEN_LIMIT+1 > z || WORLD_GEN_LIMIT < z) return;
-  int32_t *chunk_data = world_data[x+(WORLD_GEN_LIMIT/2)][z+(WORLD_GEN_LIMIT/2)];
+  int32_t chunkpos[2] = {x,z};
+  int32_t *chunk_data_ptr = hashmap_get(&chunk_data, &chunkpos, sizeof(chunkpos));
   /* for(int i = 0; i < 4096*24; i++) */
   /*   chunk_data[i] = MINECRAFT_AIR; */
-  if(!has_generated_chunk[x+(WORLD_GEN_LIMIT/2)][z+(WORLD_GEN_LIMIT/2)]) {
-    has_generated_chunk[x+(WORLD_GEN_LIMIT/2)][z+(WORLD_GEN_LIMIT/2)] = 1;
+  if(chunk_data_ptr == NULL) {
+    chunk_data_ptr = malloc(sizeof(int32_t)*(4096*24));
+    //printf("%s\n", "getting");
+    //chunk_data_ptr = hashmap_get(&chunk_data, &((chunkpos){x, z}), sizeof(chunkpos));
     fnl_state noise_2d = fnlCreateState();
     noise_2d.noise_type = FNL_NOISE_PERLIN;
     noise_2d.frequency = 0.05;
@@ -83,7 +90,7 @@ void send_chunks(simple_server *server, int player_num, int32_t x, int32_t z) {
 
 	biome_map[x2][z2] = ((fnlGetNoise2D(&noise_2d, ((float)(x*16)+x2)/BIOME_SCALE, ((float)(z*16)+z2)/BIOME_SCALE)+1)/2);
       }
-
+    
     for(int i = 0; i < 24; i++) {
       // write chunk data to our array
       for(int local_y = 0; local_y < 16; local_y++) {
@@ -93,7 +100,7 @@ void send_chunks(simple_server *server, int player_num, int32_t x, int32_t z) {
 	  for(int local_x = 0; local_x < 16; local_x++) {
 	    float block_x = (x*16)+local_x;
 	    int idx = (i*4096)+(local_y*16*16)+(local_z*16)+local_x;
-
+	    
 	    float block_x_warped = block_x;
 	    float block_y_warped = block_y;
 	    float block_z_warped = block_z;
@@ -106,31 +113,39 @@ void send_chunks(simple_server *server, int player_num, int32_t x, int32_t z) {
 	      //section.block_states.data[idx] = 1;
 	      //printf("%f, %f\n", cave_multiplier, block_y);
 	      if (noise1*cave_multiplier > 0.45) {//noise2 < 0.5 && 
-	        chunk_data[idx] = MINECRAFT_AIR;
+	        chunk_data_ptr[idx] = MINECRAFT_AIR;
 	      } else {
 		uint64_t hash1 = get_hash_at_point((int)block_x, (int)block_y, (int)block_z, WORLD_SEED);
-		chunk_data[idx] = MINECRAFT_STONE;
+		chunk_data_ptr[idx] = MINECRAFT_STONE;
 		int ore_to_spawn = (hash1&255);
 		if(ore_to_spawn == 0)
-		  chunk_data[idx] = MINECRAFT_GOLD_ORE;
+		  chunk_data_ptr[idx] = MINECRAFT_GOLD_ORE;
 		else if(ore_to_spawn == 1)
-		  chunk_data[idx] = MINECRAFT_DIAMOND_ORE;
+		  chunk_data_ptr[idx] = MINECRAFT_DIAMOND_ORE;
 		  
 		if((int)heightmap[local_x][local_z]-1 <= block_y)
-		  chunk_data[idx] = MINECRAFT_GRASS_BLOCK__SNOWY_FALSE;
+		  chunk_data_ptr[idx] = MINECRAFT_GRASS_BLOCK__SNOWY_FALSE;
 		else if((int)heightmap[local_x][local_z]-3 <= block_y)
-		  chunk_data[idx] = MINECRAFT_DIRT;
+		  chunk_data_ptr[idx] = MINECRAFT_DIRT;
 		
 	      }
 	    } else
-	      chunk_data[idx] = MINECRAFT_AIR;
+	      chunk_data_ptr[idx] = MINECRAFT_AIR;
 
 	  }
 	}
       }
     }
+    int32_t *chunkpos_copy = malloc(sizeof(chunkpos));
+    chunkpos_copy[0] = x;
+    chunkpos_copy[1] = z;
+    if(0 != hashmap_put(&chunk_data, chunkpos_copy, sizeof(chunkpos), chunk_data_ptr)){
+      perror("putting in chunk hashmap failed");
+      return;
+    }
+    
   } 
-  send_chunk_packet(write_buf, WRITE_BUF_SIZE, server->players[player_num]->conn.fd, chunk_data, 24, x, z);
+  send_chunk_packet(write_buf, WRITE_BUF_SIZE, server->players[player_num]->conn.fd, chunk_data_ptr, 24, x, z);
 }
 void send_set_entity_metadata(uint8_t *write_buf, int32_t write_buf_size, simple_server *server, int player_num, int32_t entity_id, entity_metadata meta) {
   set_entity_metadata packet;
@@ -342,6 +357,10 @@ void finish_configuration_cb(simple_server *server, int player_num) {
 
 int main(void)
 {
+  if (0 != hashmap_create(32, &chunk_data)) {
+    perror("failed to allocate chunk hashmap");
+    return 1;
+  }
   int filter_error = init_filter();
   if(filter_error) {
     printf("filter error: %d\nnot starting the server without the filter\n", filter_error);
