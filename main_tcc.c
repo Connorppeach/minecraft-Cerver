@@ -67,14 +67,13 @@ simple_server_callback create_server_callback_from_script(char *filename, simple
   TCC_ADD_SYMBOL(write_var_int);
   TCC_ADD_SYMBOL(send_packet);
   // todo -- make this less stupid(possibly use the macro system?)
+#define PACKET(name, ...) TCC_ADD_SYMBOL(write_##name);
+#define PACKET_ID(name, id) TCC_ADD_SYMBOL(send_##name##_packet);
+#include "./protocol/all_packets.h"
+#undef PACKET
+#undef PACKET_ID
+
   TCC_ADD_SYMBOL(send_chunk_packet);
-  TCC_ADD_SYMBOL(send_game_event);
-  TCC_ADD_SYMBOL(send_set_center_chunk);
-  TCC_ADD_SYMBOL(send_set_head_rotation);
-  TCC_ADD_SYMBOL(send_spawn_entity);
-  TCC_ADD_SYMBOL(send_update_entity_posrot);
-  TCC_ADD_SYMBOL(write_clientbound_keep_alive);
-  TCC_ADD_SYMBOL(teleport_player);
   TCC_ADD_SYMBOL(update_tab_list);
 
   

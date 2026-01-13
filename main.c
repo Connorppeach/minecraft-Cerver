@@ -186,7 +186,9 @@ void handle_packet_cb(simple_server *server, int player_num, int packet_type, ui
     if(should_send)
       for(int i = 0; i < server->max_players; i++) {
 	if(server->player_slots[i] != NULL) {
-	  send_system_chat_message(write_buf, WRITE_BUF_SIZE, server, i, message_component, 0);        
+	  send_system_chat_message_packet(write_buf, WRITE_BUF_SIZE, server->players[player_num]->conn.fd,
+					  (system_chat_message){.content = message_component,
+								.overlay = 0});        
 	}
       }
     nbt_free_tag(message_component);
@@ -267,9 +269,20 @@ void send_all_players_to_players(simple_server *server) {
 	   server->players[j]->conn.connection_state == 4 &&
 	   j != i) {
 	  //printf("%d\n%d\n\n", i, j);
-	  send_spawn_entity(write_buf, WRITE_BUF_SIZE, server, j, i, server->players[i]->uuid, 155,
-			    server->players[i]->loc.x, server->players[i]->loc.y, server->players[i]->loc.z,
-			    server->players[i]->loc.pitch, server->players[i]->loc.yaw, server->players[i]->loc.yaw/1.41, 0, 0, 0, 0);
+	  send_spawn_entity_packet(write_buf, WRITE_BUF_SIZE, server->players[j]->conn.fd,
+			    (spawn_entity){ .eid = i,
+					    .entity_uuid = server->players[i]->uuid,
+					    .type = 155,
+					    .x = server->players[i]->loc.x,
+					    .y = server->players[i]->loc.y,
+					    .z = server->players[i]->loc.z,
+					    .pitch = server->players[i]->loc.pitch/1.41,
+					    .yaw = server->players[i]->loc.yaw/1.41,
+					    .head_angle = server->players[i]->loc.yaw/1.41,
+					    .velocity.x = 0,
+					    .velocity.y = 0,
+					    .velocity.z = 0,
+					    .data = 0});
 	}
     }
   }
@@ -308,8 +321,20 @@ void on_move_cb(simple_server *server, int player_num, mc_location old_location,
     if(server->player_slots[j] &&
        server->players[j]->conn.connection_state == 4 &&
        j != player_num) {
-      send_update_entity_posrot(write_buf, WRITE_BUF_SIZE, server, j, player_num, new_location.x, new_location.y, new_location.z, old_location.x, old_location.y, old_location.z, new_location.yaw, new_location.pitch, true);
-      send_set_head_rotation(write_buf, WRITE_BUF_SIZE, server, j, player_num, new_location.yaw);
+      send_update_entity_position_and_rotation_packet(write_buf, WRITE_BUF_SIZE, server->players[j]->conn.fd,
+						      (update_entity_position_and_rotation){
+							.entity_id = player_num,
+							.delta_x = new_location.x * 4096 - old_location.x,
+							.delta_y = new_location.y * 4096 - old_location.y,
+							.delta_z = new_location.z * 4096 - old_location.z,
+							.yaw = new_location.yaw/1.41,
+							.pitch = new_location.pitch/1.41,
+							.on_ground = true});
+      send_set_head_rotation_packet(write_buf, WRITE_BUF_SIZE, server->players[j]->conn.fd,
+				    (set_head_rotation){
+				      .entity_id = player_num,
+				      .yaw = new_location.yaw
+				    });
     }
 };
 
@@ -321,20 +346,46 @@ void finish_configuration_cb(simple_server *server, int player_num) {
   // update tab list
   {
 
-    send_game_event(write_buf, WRITE_BUF_SIZE, server, player_num, 13, 0.0);
-    teleport_player(write_buf, WRITE_BUF_SIZE, server, player_num, 8.5, 67, 8.5, 0, 0, 0);
+    send_game_event_packet(write_buf, WRITE_BUF_SIZE, server->players[player_num]->conn.fd,
+			   (game_event){
+			     .event_id = 13,
+			     .value = 0.0
+			   });
+    
+    send_syncronize_player_position_packet(write_buf, WRITE_BUF_SIZE, server->players[player_num]->conn.fd,
+					   (syncronize_player_position){
+					     .x = 8.5,
+					     .y = 67,
+					     .z = 8.5,
+					     .velocity_x = 0,
+					     .velocity_y = 0,
+					     .velocity_z = 0,
+					     .flags = 0,
+					     .pitch = 0,
+					     .yaw = 0,
+					   });
+    server->players[player_num]->loc.x = 8.5;
+    server->players[player_num]->loc.y = 67;
+    server->players[player_num]->loc.z = 8.5;
+    
     {
       int new_id = MAX_PLAYERS+1;
       uuid temp_uuid = { -1, -1 };
-      send_spawn_entity(write_buf, WRITE_BUF_SIZE, server,
-			player_num, // send to me
-			new_id, // entity id
-			temp_uuid, // uuid
-			5, // entity type
-			8.5, 66, 11, // loc x y z
-			0, 180, 180,// pitch yaw head yaw
-			0, // data
-			0, 0, 0); // velocity
+      send_spawn_entity_packet(write_buf, WRITE_BUF_SIZE, server->players[player_num]->conn.fd, // send to me
+			       (spawn_entity){
+				 .eid = new_id, // entity id
+				 .entity_uuid = temp_uuid, // uuid
+				 .type = 5, // entity type
+				 .x = 8.5,
+				 .y = 66,
+				 .z = 11, // loc x y z
+				 .pitch = 0,
+				 .yaw = 180/1.41,
+				 .head_angle = 180/1.41,// pitch yaw head yaw
+				 .data = 0, // data
+				 .velocity.x = 0,
+				 .velocity.y = 0,
+				 .velocity.z = 0}); // velocity
       entity_metadata meta;
       /* meta.index = 18; */
       /* meta.type = 9; */
