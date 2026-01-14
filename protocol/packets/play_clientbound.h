@@ -238,127 +238,154 @@ PACKET(chunk_block_entity,
        O(network_nbt, nbt_tag_t*, data);
        );
 
+
+
+
 PACKET(paletted_container,
 #if defined(PACKET_READ_IMPL)
        // todo -- read
 #elif defined(PACKET_WRITE_IMPL)
-#define MIN(a, b) ((a) < (b) ? (a) : (b))
-#define MAX(a, b) ((a) > (b) ? (a) : (b))
-
-       int number_of_entries;
-       if(out.type == 0)
-	 number_of_entries = 4096;
-       else if(out.type == 1)
-	 number_of_entries = 64;
-       else number_of_entries = 0;
-
-       int32_t n_distinct_values = 0;
-       int32_t distinct_values[4096];
-       for(int i = 0; i < number_of_entries; i++) {
-	 int32_t value = out.data[i];
-	 int8_t found_data = 0;
-	 for(int j = 0; j < n_distinct_values; j++)
-	   if(distinct_values[j] == value)
-	     found_data = 1;
-	 if(!found_data) { // distinct
-	   distinct_values[n_distinct_values++] = value;
-	 }
-       }
-       int n_distinct_values_2 = n_distinct_values;
-       int bits_per_entry = 0;
-       //printf("%d\n%d\n", bits_per_entry, n_distinct_values);
-
-       while (n_distinct_values_2 > 0) {
-	 n_distinct_values_2 &= (n_distinct_values_2 - 1); // Unsets the rightmost set bit
-	 bits_per_entry++;      // Increment count
-       }
-       bits_per_entry = MAX(out.min_max_bpe_indirect[0], bits_per_entry);
-
-       if (n_distinct_values == 1) {
-	 error = write_ubyte(packet_buffer, pos, max, 0);
+       for(int i = 0; i < out.data_len; i++) {
+	 error = write_ubyte(packet_buffer, pos, max, out.data[i]);
 	 if(error) return error;
-	 error = write_var_int(packet_buffer, pos, max, distinct_values[0]);	
-	 if(error) return error;
-       } else if (bits_per_entry <= out.min_max_bpe_indirect[1]) { // paletted
-
-	 error = write_ubyte(packet_buffer, pos, max, bits_per_entry);
-	 if(error) return error;
-	 error = write_var_int(packet_buffer, pos, max, n_distinct_values);	
-	 for(int i = 0; i < n_distinct_values; i++) {
-	   error = write_var_int(packet_buffer, pos, max, distinct_values[i]);
-	   //printf("%d\n", n_distinct_values);
-	   if(error) return error;
-	 }
-
-	 int entries_per_long = 64 / bits_per_entry;
-	 int number_of_longs = ceil((float)number_of_entries / entries_per_long);
-
-	 uint64_t entry_mask = ((uint64_t)1 << bits_per_entry) - 1;
-	 //printf("entry_mask: %ld\n", entry_mask);
-	 uint64_t data[4096] = { };
-	 //for(int i = 0; i < number_of_longs; i++) data[i] = 0;
-	 for(int i = 0; i < number_of_entries; i++) {
-	   int long_index = i / entries_per_long;
-	   int bit_index = (i % entries_per_long) * bits_per_entry;
-
-	   data[long_index] &= ~(entry_mask << bit_index);
-	   // if value has a smaller integer type, it may again be necessary to cast it to 64 bits.
-	   int data_idx = 0;
-	   for(int j = 0; j < n_distinct_values; j++)
-	     if(out.data[i] == distinct_values[j])
-	       data_idx = j;
-	     
-	   data[long_index] |= (uint64_t)data_idx << bit_index;
-	 }
-	 
-	 for(int i = 0; i < number_of_longs; i++) {
-	   error = write_long(packet_buffer, pos, max, data[i]);
-	   if(error)
-	     return error;
-	 }
-	 
-
-       } else { // direct
-	 error = write_ubyte(packet_buffer, pos, max, out.bits_per_entry_direct);
-	 if(error) return error;
-
-	 int entries_per_long = floor((float)64 / out.bits_per_entry_direct);
-	 int number_of_longs = ceil((float)number_of_entries / entries_per_long);
-
-	 uint64_t entry_mask = ((uint64_t)1 << out.bits_per_entry_direct) - 1;
-	 
-	 uint64_t data[4096] = { 0 };
-	 //for(int i = 0; i < number_of_longs; i++) data[i] = 0;
-	 for(int i = 0; i < number_of_entries; i++) {
-	   int long_index = i / entries_per_long;
-	   int bit_index = i % entries_per_long * out.bits_per_entry_direct;
-
-	   //printf("%d\n", long_index);
-	   data[long_index] &= ~(entry_mask << bit_index);
-	   // if value has a smaller integer type, it may again be necessary to cast it to 64 bits.
-	   data[long_index] |= (uint64_t)out.data[i] << bit_index;
-	 }
-	 
-	 for(int i = 0; i < number_of_longs; i++) {
-	   error = write_long(packet_buffer, pos, max, data[i]);
-	   if(error)
-	     return error;
-	 }
-	 
-
        }
        
 #elif defined(PACKET_PRINT_IMPL)
        // todo -- print
 #else
-#define PALETTED_CONTAINER_TYPE_BLOCK 0
-#define PALETTED_CONTAINER_TYPE_BIOME 1
-       int32_t data[4096];
-       uint8_t min_max_bpe_indirect[2]; 
-       uint8_t bits_per_entry_direct;
-       uint8_t type; // 0 for chunk, 1 for biome(determines the number of entries)
+       uint8_t *data;
+       uint32_t data_len; // 0 for chunk, 1 for biome(determines the number of entries)
 #endif
        );
+
+#if defined(PACKET_READ_IMPL)
+       // todo -- read
+#elif defined(PACKET_WRITE_IMPL)
+int create_paletted_container_from_entries(int32_t *block_states, uint8_t min_bpe_indirect, uint8_t max_bpe_indirect, uint8_t bits_per_entry_direct, int8_t palette_variant, paletted_container *out) {
+  uint8_t _packet_buffer[4096];
+  uint32_t pos = 0;
+  int32_t max = 4096;
+  uint8_t *packet_buffer = _packet_buffer;
+  int error = 0;
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+
+  int number_of_entries;
+  if(palette_variant == 0)
+    number_of_entries = 4096;
+  else if(palette_variant == 1)
+    number_of_entries = 64;
+  else number_of_entries = 0;
+
+  int32_t n_distinct_values = 0;
+  int32_t distinct_values[4096];
+  for(int i = 0; i < number_of_entries; i++) {
+    int32_t value = block_states[i];
+    int8_t found_data = 0;
+    for(int j = 0; j < n_distinct_values; j++)
+      if(distinct_values[j] == value)
+	found_data = 1;
+    if(!found_data) { // distinct
+      distinct_values[n_distinct_values++] = value;
+    }
+  }
+  int n_distinct_values_2 = n_distinct_values;
+  int bits_per_entry = 0;
+  //printf("%d\n%d\n", bits_per_entry, n_distinct_values);
+
+  while (n_distinct_values_2 > 0) {
+    n_distinct_values_2 &= (n_distinct_values_2 - 1); // Unsets the rightmost set bit
+    bits_per_entry++;      // Increment count
+  }
+  bits_per_entry = MAX(min_bpe_indirect, bits_per_entry);
+
+  if (n_distinct_values == 1) {
+    error = write_ubyte(&packet_buffer, &pos, max, 0);
+    if(error) return error;
+    error = write_var_int(&packet_buffer, &pos, max, distinct_values[0]);	
+    if(error) return error;
+  } else if (bits_per_entry <= max_bpe_indirect) { // paletted
+
+    error = write_ubyte(&packet_buffer, &pos, max, bits_per_entry);
+    if(error) return error;
+    error = write_var_int(&packet_buffer, &pos, max, n_distinct_values);	
+    for(int i = 0; i < n_distinct_values; i++) {
+      error = write_var_int(&packet_buffer, &pos, max, distinct_values[i]);
+      //printf("%d\n", n_distinct_values);
+      if(error) return error;
+    }
+
+    int entries_per_long = 64 / bits_per_entry;
+    int number_of_longs = ceil((float)number_of_entries / entries_per_long);
+
+    uint64_t entry_mask = ((uint64_t)1 << bits_per_entry) - 1;
+    //printf("entry_mask: %ld\n", entry_mask);
+    uint64_t data[4096] = { };
+    //for(int i = 0; i < number_of_longs; i++) data[i] = 0;
+    for(int i = 0; i < number_of_entries; i++) {
+      int long_index = i / entries_per_long;
+      int bit_index = (i % entries_per_long) * bits_per_entry;
+
+      data[long_index] &= ~(entry_mask << bit_index);
+      // if value has a smaller integer type, it may again be necessary to cast it to 64 bits.
+      int data_idx = 0;
+      for(int j = 0; j < n_distinct_values; j++)
+	if(block_states[i] == distinct_values[j])
+	  data_idx = j;
+	     
+      data[long_index] |= (uint64_t)data_idx << bit_index;
+    }
+	 
+    for(int i = 0; i < number_of_longs; i++) {
+      error = write_long(&packet_buffer, &pos, max, data[i]);
+      if(error)
+	return error;
+    }
+	 
+
+  } else { // direct
+    error = write_ubyte(&packet_buffer, &pos, max, bits_per_entry_direct);
+    if(error) return error;
+
+    int entries_per_long = floor((float)64 / bits_per_entry_direct);
+    int number_of_longs = ceil((float)number_of_entries / entries_per_long);
+
+    uint64_t entry_mask = ((uint64_t)1 << bits_per_entry_direct) - 1;
+	 
+    uint64_t data[4096] = { 0 };
+    //for(int i = 0; i < number_of_longs; i++) data[i] = 0;
+    for(int i = 0; i < number_of_entries; i++) {
+      int long_index = i / entries_per_long;
+      int bit_index = i % entries_per_long * bits_per_entry_direct;
+
+      //printf("%d\n", long_index);
+      data[long_index] &= ~(entry_mask << bit_index);
+      // if value has a smaller integer type, it may again be necessary to cast it to 64 bits.
+      data[long_index] |= (uint64_t)block_states[i] << bit_index;
+    }
+	 
+    for(int i = 0; i < number_of_longs; i++) {
+      error = write_long(&packet_buffer, &pos, max, data[i]);
+      if(error)
+	return error;
+    }
+	 
+
+  }
+#undef MIN
+#undef MAX
+  out->data = malloc(pos);
+  memcpy(out->data, _packet_buffer, pos);
+  out->data_len = pos;
+}
+#elif defined(PACKET_PRINT_IMPL)
+       // todo -- print
+#else
+#define PALETTED_CONTAINER_TYPE_BLOCK 0
+#define PALETTED_CONTAINER_TYPE_BIOME 1
+int create_paletted_container_from_entries(int32_t *block_states, uint8_t min_bpe_indirect, uint8_t max_bpe_indirect, uint8_t bits_per_entry_direct, int8_t palette_variant, paletted_container *out);
+#endif
+
 PACKET(chunk_section,
        R(short, int16_t, block_count);
        R(paletted_container, paletted_container, block_states);

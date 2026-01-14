@@ -34,6 +34,8 @@ int allocate_player(simple_server *server, int fd) {
 void deallocate_player(simple_server *server, int player_id) {
   if(server->player_slots[player_id]) {
     puts("deallocating player");
+    /* if(server->cb.player_leave) */
+    /*   server->cb.player_leave(server, player_id); */
     FD_CLR(server->players[player_id]->conn.fd, &server->master); // remove from master set
     free_player(server->players[player_id]);
     server->players[player_id] = NULL;
@@ -977,6 +979,7 @@ void handle_packet(simple_server *server, int player_num, uint8_t *buf, int nbyt
 
 int start_server(simple_server *server, int port, simple_server_callback cb)
 {
+  //server->cb = cb;
   // master file descriptor list
   struct sockaddr_in myaddr;     // server address
   int fdmax;        // maximum file descriptor number

@@ -13,10 +13,8 @@
 #include "player.h"
 #include "../protocol/packets.h"
 
-#define PORT 25545   // port we're listening on
 
 
-#define MAX_PLAYERS 10
 typedef struct {
   player **players;
   uint8_t *player_slots;
@@ -29,7 +27,6 @@ typedef struct {
   uint8_t should_stop;
 } simple_server;
 
-
 typedef struct {
   void (*packet_callback)(simple_server *server, int player_num, int packet_type, uint8_t *packet_buf, unsigned int buf_len);
   void (*tick_callback)(simple_server *server);
@@ -37,6 +34,7 @@ typedef struct {
   void (*player_load_chunks)(simple_server *server, int player_num, int x, int z);
   void (*on_move)(simple_server *server, int player_num, mc_location old_location, mc_location new_location);
 } simple_server_callback;
+
 int allocate_player(simple_server *server, int fd);
 void deallocate_player(simple_server *server, int player_id);
 

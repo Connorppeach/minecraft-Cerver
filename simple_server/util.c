@@ -49,7 +49,50 @@ void send_packet(uint8_t *packet_buf, int packet_len, int fd) {
 
 
 
-void send_chunk_packet(uint8_t *write_buf, uint32_t packet_max_len, int player_fd, int32_t *section_datas, int num_sections, int32_t x, int32_t z) {
+int send_chunk_packet(uint8_t *write_buf, uint32_t packet_max_len, int player_fd, chunk_section *sections, int num_sections, int32_t x, int32_t z) {
+  chunk_data_and_update_light packet;
+  packet.heightmap_count = 0;
+  packet.block_entities_count = 0;
+  packet.x = x;
+  packet.y = z;
+
+  packet.o1 = 0;
+  packet.o2 = 0;
+  packet.o3 = 0;
+  packet.o4 = 0;
+  packet.o5 = 0;
+  packet.o6 = 0;
+
+
+  uint8_t *packet_ptr = write_buf+4;
+  uint32_t max = 0;
+  uint32_t chunk_data_max_w = num_sections*4096*8;
+  uint8_t chunk_data[chunk_data_max_w];
+  uint8_t *chunk_data_ptr = chunk_data;
+  uint32_t chunk_data_max = 0;
+  
+  for(int i = 0; i < num_sections; i++) {
+    // write chunk data to our array
+
+    int error = write_chunk_section(&chunk_data_ptr, &chunk_data_max, chunk_data_max_w, sections[i]);
+    if (error) {
+      printf("error while writing chunk section: %d\n", error);
+      return error;
+    }    
+  }
+  packet.data = chunk_data;
+  packet.data_len = chunk_data_max;
+  write_var_int(&packet_ptr, &max, packet_max_len-4, CHUNK_DATA_AND_UPDATE_LIGHT_ID);
+  int error = write_chunk_data_and_update_light(&packet_ptr, &max, packet_max_len-4, packet);
+  if (error) {
+    printf("error: %d\n", error);
+    return error;
+  }
+  send_packet(write_buf, max, player_fd);
+}
+
+
+void send_raw_chunk_packet(uint8_t *write_buf, uint32_t packet_max_len, int player_fd, int32_t *section_datas, int num_sections, int32_t x, int32_t z) {
   chunk_data_and_update_light packet;
   packet.heightmap_count = 0;
   packet.block_entities_count = 0;
@@ -74,43 +117,31 @@ void send_chunk_packet(uint8_t *write_buf, uint32_t packet_max_len, int player_f
 
   chunk_section section;
   section.block_count = 4096;
-
-  section.block_states.type = PALETTED_CONTAINER_TYPE_BLOCK;
-  section.block_states.min_max_bpe_indirect[0] = 4;
-  section.block_states.min_max_bpe_indirect[1] = 8;
-  section.block_states.bits_per_entry_direct = 15;
+  
+  /* section.block_states.type = PALETTED_CONTAINER_TYPE_BLOCK; */
+  /* section.block_states.min_max_bpe_indirect[0] = 4; */
+  /* section.block_states.min_max_bpe_indirect[1] = 8; */
+  /* section.block_states.bits_per_entry_direct = 15; */
   /* for(int i = 0; i < 4096; i++) */
   /*   section.block_states.data[i] = MINECRAFT_AIR; */
 
 
-  section.biomes.type = PALETTED_CONTAINER_TYPE_BIOME;
-  section.biomes.min_max_bpe_indirect[0] = 1;
-  section.biomes.min_max_bpe_indirect[1] = 3;
-  section.biomes.bits_per_entry_direct = 7;
-
+  /* section.biomes.type = PALETTED_CONTAINER_TYPE_BIOME; */
+  /* section.biomes.min_max_bpe_indirect[0] = 1; */
+  /* section.biomes.min_max_bpe_indirect[1] = 3; */
+  /* section.biomes.bits_per_entry_direct = 7; */
+  int32_t biomes[64] = { 0 };
   
   for(int i = 0; i < num_sections; i++) {
     // write chunk data to our array
-      for(int local_y = 0; local_y < 16; local_y++) {
-	for(int local_z = 0; local_z < 16; local_z++) {
-	  for(int local_x = 0; local_x < 16; local_x++) {
-	    int idx = (local_y*16*16)+(local_z*16)+local_x;
-	    section.block_states.data[idx] = section_datas[(4096*i)+idx];
-	  }
-	}
-      }
-      for(int local_y = 0; local_y < 4; local_y++) {
-	for(int local_z = 0; local_z < 4; local_z++) {
-	  for(int local_x = 0; local_x < 4; local_x++) {
-	    int idx = (local_y*4*4)+(local_z*4)+local_x;
-	    section.biomes.data[idx] = 0;
-	  }
-	}
-      }
 
-
+    paletted_container p_blocks;
+    create_paletted_container_from_entries(section_datas+(4096*i), 4, 8, 15, PALETTED_CONTAINER_TYPE_BLOCK, &p_blocks);
+    paletted_container p_biomes;
+    create_paletted_container_from_entries(biomes, 4, 8, 15, PALETTED_CONTAINER_TYPE_BIOME, &p_biomes);
       
-    
+    section.block_states = p_blocks;
+    section.biomes = p_biomes;
     
     int error = write_chunk_section(&chunk_data_ptr, &chunk_data_max, chunk_data_max_w, section);
     if (error) {

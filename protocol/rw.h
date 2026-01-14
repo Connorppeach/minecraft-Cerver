@@ -87,19 +87,19 @@ void print_position(position value, int indentation);
 
 
 // dummy freers
-#define free_var_int(x) 0
-#define free_bool(x) 0
-#define free_uuid(x) 0
-#define free_var_str(x) 0
-#define free_short(x) 0
-#define free_ushort(x) 0
+#define free_var_int(x)
+#define free_bool(x) 
+#define free_uuid(x) 
+#define free_var_str(x) 
+#define free_short(x) 
+#define free_ushort(x) 
 #define free_network_nbt(x) nbt_free_tag(x)
-#define free_long(x) 0
-#define free_byte(x) 0
-#define free_ubyte(x) 0
-#define free_int(x) 0
-#define free_float(x) 0
-#define free_double(x) 0
-#define free_lpvec3(x) 0
+#define free_long(x) 
+#define free_byte(x) 
+#define free_ubyte(x) 
+#define free_int(x) 
+#define free_float(x) 
+#define free_double(x) 
+#define free_lpvec3(x) 
 
 #endif // _H_RW_CERVER_

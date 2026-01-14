@@ -21,7 +21,7 @@
 #define MAX_PLAYERS 10
 #define WORLD_GEN_LIMIT 16
 
-#define VIEW_DISTANCE 5
+#define VIEW_DISTANCE 16
 
 // world gen settings
 // cave settings
@@ -50,18 +50,20 @@ uint64_t get_hash_at_point(int x, int y, int z, int seed) {
   return komihash(to_hash, sizeof(to_hash), seed);
 }
 
-
+typedef struct {
+  chunk_section sections[24];
+} chunk;
 
 
 
 void send_chunks(simple_server *server, int player_num, int32_t x, int32_t z) {
   if(-WORLD_GEN_LIMIT+1 > x || WORLD_GEN_LIMIT < x || -WORLD_GEN_LIMIT+1 > z || WORLD_GEN_LIMIT < z) return;
   int32_t chunkpos[2] = {x,z};
-  int32_t *chunk_data_ptr = hashmap_get(&chunk_data, &chunkpos, sizeof(chunkpos));
+  chunk *chunk_data_ptr = hashmap_get(&chunk_data, &chunkpos, sizeof(chunkpos));
   /* for(int i = 0; i < 4096*24; i++) */
   /*   chunk_data[i] = MINECRAFT_AIR; */
   if(chunk_data_ptr == NULL) {
-    chunk_data_ptr = malloc(sizeof(int32_t)*(4096*24));
+    chunk_data_ptr = malloc(sizeof(chunk));
     //printf("%s\n", "getting");
     //chunk_data_ptr = hashmap_get(&chunk_data, &((chunkpos){x, z}), sizeof(chunkpos));
     fnl_state noise_2d = fnlCreateState();
@@ -93,13 +95,17 @@ void send_chunks(simple_server *server, int player_num, int32_t x, int32_t z) {
     
     for(int i = 0; i < 24; i++) {
       // write chunk data to our array
+      int32_t section_blocks[4096];
+      int32_t section_biomes[64] = { 0 };
+      paletted_container biomes;
+      create_paletted_container_from_entries(section_biomes, 4, 8, 15, PALETTED_CONTAINER_TYPE_BIOME, &biomes);
       for(int local_y = 0; local_y < 16; local_y++) {
 	float block_y = (i*16)+local_y;
 	for(int local_z = 0; local_z < 16; local_z++) {
 	  float block_z = (z*16)+local_z;
 	  for(int local_x = 0; local_x < 16; local_x++) {
 	    float block_x = (x*16)+local_x;
-	    int idx = (i*4096)+(local_y*16*16)+(local_z*16)+local_x;
+	    int idx = (local_y*16*16)+(local_z*16)+local_x;
 	    
 	    float block_x_warped = block_x;
 	    float block_y_warped = block_y;
@@ -113,28 +119,33 @@ void send_chunks(simple_server *server, int player_num, int32_t x, int32_t z) {
 	      //section.block_states.data[idx] = 1;
 	      //printf("%f, %f\n", cave_multiplier, block_y);
 	      if (noise1*cave_multiplier > 0.45) {//noise2 < 0.5 && 
-	        chunk_data_ptr[idx] = MINECRAFT_AIR;
+	        section_blocks[idx] = MINECRAFT_AIR;
 	      } else {
 		uint64_t hash1 = get_hash_at_point((int)block_x, (int)block_y, (int)block_z, WORLD_SEED);
-		chunk_data_ptr[idx] = MINECRAFT_STONE;
+		section_blocks[idx] = MINECRAFT_STONE;
 		int ore_to_spawn = (hash1&255);
 		if(ore_to_spawn == 0)
-		  chunk_data_ptr[idx] = MINECRAFT_GOLD_ORE;
+		  section_blocks[idx] = MINECRAFT_GOLD_ORE;
 		else if(ore_to_spawn == 1)
-		  chunk_data_ptr[idx] = MINECRAFT_DIAMOND_ORE;
+		  section_blocks[idx] = MINECRAFT_DIAMOND_ORE;
 		  
 		if((int)heightmap[local_x][local_z]-1 <= block_y)
-		  chunk_data_ptr[idx] = MINECRAFT_GRASS_BLOCK__SNOWY_FALSE;
+		  section_blocks[idx] = MINECRAFT_GRASS_BLOCK__SNOWY_FALSE;
 		else if((int)heightmap[local_x][local_z]-3 <= block_y)
-		  chunk_data_ptr[idx] = MINECRAFT_DIRT;
+		  section_blocks[idx] = MINECRAFT_DIRT;
 		
 	      }
 	    } else
-	      chunk_data_ptr[idx] = MINECRAFT_AIR;
+	      section_blocks[idx] = MINECRAFT_AIR;
 
 	  }
 	}
       }
+      paletted_container blocks;
+      create_paletted_container_from_entries(section_blocks, 4, 8, 15, PALETTED_CONTAINER_TYPE_BLOCK, &blocks);
+      chunk_data_ptr->sections[i].biomes = biomes;
+      chunk_data_ptr->sections[i].block_states = blocks;
+      chunk_data_ptr->sections[i].block_count = 400;
     }
     int32_t *chunkpos_copy = malloc(sizeof(chunkpos));
     chunkpos_copy[0] = x;
@@ -143,9 +154,8 @@ void send_chunks(simple_server *server, int player_num, int32_t x, int32_t z) {
       perror("putting in chunk hashmap failed");
       return;
     }
-    
   } 
-  send_chunk_packet(write_buf, WRITE_BUF_SIZE, server->players[player_num]->conn.fd, chunk_data_ptr, 24, x, z);
+  send_chunk_packet(write_buf, WRITE_BUF_SIZE, server->players[player_num]->conn.fd, chunk_data_ptr->sections, 24, x, z);
 }
 void send_set_entity_metadata(uint8_t *write_buf, int32_t write_buf_size, simple_server *server, int player_num, int32_t entity_id, entity_metadata meta) {
   set_entity_metadata packet;
