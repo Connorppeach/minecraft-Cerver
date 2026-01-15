@@ -16,7 +16,7 @@ int init_filter();
 pcre2_match_data *filter_match_data[1383];
 
 pcre2_code *filter_codes[1383];
-char filter_list[][512] = {   "(?i)(^|[^a-zA-Z0-9])a+(\\W|_|\\d)*b+(\\W|_|\\d)*b+(\\W|_|\\d)*o+(\\W|_|\\d)*+(\\W|_|\\d)*(?![a-zA-Z0-9])", // blocks abbo
+char filter_list[1383][512] = {   "(?i)(^|[^a-zA-Z0-9])a+(\\W|_|\\d)*b+(\\W|_|\\d)*b+(\\W|_|\\d)*o+(\\W|_|\\d)*+(\\W|_|\\d)*(?![a-zA-Z0-9])", // blocks abbo
    "(?i)(^|[^a-zA-Z0-9])a+(\\W|_|\\d)*b+(\\W|_|\\d)*o+(\\W|_|\\d)*+(\\W|_|\\d)*(?![a-zA-Z0-9])", // blocks abo
    "(?i)(^|[^a-zA-Z0-9])a+(\\W|_|\\d)*b+(\\W|_|\\d)*o+(\\W|_|\\d)*r+(\\W|_|\\d)*t+(\\W|_|\\d)*i+(\\W|_|\\d)*o+(\\W|_|\\d)*n+(\\W|_|\\d)*+(\\W|_|\\d)*(?![a-zA-Z0-9])", // blocks abortion
    "(?i)(^|[^a-zA-Z0-9])a+(\\W|_|\\d)*b+(\\W|_|\\d)*u+(\\W|_|\\d)*s+(\\W|_|\\d)*e+(\\W|_|\\d)*+(\\W|_|\\d)*(?![a-zA-Z0-9])", // blocks abuse
