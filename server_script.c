@@ -3,7 +3,7 @@
 #include "./simple_server/simple_server.h"
 #include "./util.h"
 #include "./blocks.h"
-
+#define MAX_PLAYERS 10
 #define WORLD_GEN_LIMIT 4
 
 #define WRITE_BUF_SIZE 10000
@@ -35,7 +35,7 @@ void player_load_chunks(simple_server *server, int player_num, int32_t x, int32_
       }
     }
   }
-  send_chunk_packet(write_buf, WRITE_BUF_SIZE, server->players[player_num]->conn.fd, chunk_data, 24, x, z);
+  send_raw_chunk_packet(write_buf, WRITE_BUF_SIZE, server->players[player_num]->conn.fd, chunk_data, 24, x, z);
 }
 void send_all_players_to_players(simple_server *server) {
   for(int i = 0; i < server->max_players; i++) {

@@ -243,7 +243,6 @@ PACKET(chunk_block_entity,
 
 PACKET(paletted_container,
 #if defined(PACKET_READ_IMPL)
-       // todo -- read
 #elif defined(PACKET_WRITE_IMPL)
        for(int i = 0; i < out.data_len; i++) {
 	 error = write_ubyte(packet_buffer, pos, max, out.data[i]);
@@ -259,7 +258,80 @@ PACKET(paletted_container,
        );
 
 #if defined(PACKET_READ_IMPL)
-       // todo -- read
+int read_paletted_container_to_array(uint8_t *packet_buf, int32_t max, uint8_t min_bpe_indirect, uint8_t max_bpe_indirect, uint8_t bits_per_entry_direct, int8_t palette_variant, int32_t *out) {
+  uint32_t pos = 0;
+  uint8_t *packet_buffer = packet_buf;
+  int error = 0;
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+
+  int number_of_entries;
+  if(palette_variant == 0)
+    number_of_entries = 4096;
+  else if(palette_variant == 1)
+    number_of_entries = 64;
+  else number_of_entries = 0;
+  int8_t bits_per_entry = 0;
+  error = read_byte(&packet_buffer, &pos, max, &bits_per_entry);
+  if(error) return error;
+  
+  if (bits_per_entry == 0) {
+    int32_t block;
+    error = read_var_int(&packet_buffer, &pos, max, &block);	
+    if(error) return error;
+    for(int i = 0; i < number_of_entries; i++)
+      out[i] = block;
+  } else if (bits_per_entry <= max_bpe_indirect) { // paletted
+    int32_t palette_len;
+    error = read_var_int(&packet_buffer, &pos, max, &palette_len);	
+    int32_t palette[palette_len];
+    for(int i = 0; i < palette_len; i++) {
+      error = read_var_int(&packet_buffer, &pos, max, &palette[i]);
+      //printf("%d\n", n_distinct_values);
+      if(error) return error;
+    }
+
+    int entries_per_long = 64 / bits_per_entry;
+    int number_of_longs = ceil((float)number_of_entries / entries_per_long);
+    int64_t data[number_of_longs];
+    for(int i = 0; i < number_of_longs; i++){
+      error = read_long(&packet_buffer, &pos, max, data+i);
+    }
+    uint64_t entry_mask = ((uint64_t)1 << bits_per_entry) - 1;
+    for(int i = 0; i < number_of_entries; i++) {
+      int long_index = i / entries_per_long;
+      int bit_index = (i % entries_per_long) * bits_per_entry;
+      
+      // if value has a smaller integer type, it may again be necessary to cast it to 64 bits.
+      out[i] = palette[((data[long_index] >> bit_index) & entry_mask)];
+    }
+	 
+
+	 
+
+  } else { // direct
+
+    int entries_per_long = floor((float)64 / bits_per_entry_direct);
+    int number_of_longs = ceil((float)number_of_entries / entries_per_long);
+    int64_t data[number_of_longs];
+    for(int i = 0; i < number_of_longs; i++){
+      error = read_long(&packet_buffer, &pos, max, data+i);
+    }
+
+    uint64_t entry_mask = ((uint64_t)1 << bits_per_entry_direct) - 1;
+	 
+    //for(int i = 0; i < number_of_longs; i++) data[i] = 0;
+    for(int i = 0; i < number_of_entries; i++) {
+      int long_index = i / entries_per_long;
+      int bit_index = i % entries_per_long * bits_per_entry_direct;
+
+      out[i] = (data[long_index] >> bit_index) & entry_mask;
+    }
+  }
+#undef MIN
+#undef MAX
+}
+
 #elif defined(PACKET_WRITE_IMPL)
 int create_paletted_container_from_entries(int32_t *block_states, uint8_t min_bpe_indirect, uint8_t max_bpe_indirect, uint8_t bits_per_entry_direct, int8_t palette_variant, paletted_container *out) {
   uint8_t _packet_buffer[4096];

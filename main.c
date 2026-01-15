@@ -19,9 +19,9 @@
 
 // settings
 #define MAX_PLAYERS 10
-#define WORLD_GEN_LIMIT 16
+#define WORLD_GEN_LIMIT 128
 
-#define VIEW_DISTANCE 16
+#define VIEW_DISTANCE 4
 
 // world gen settings
 // cave settings

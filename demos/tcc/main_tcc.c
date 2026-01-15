@@ -74,6 +74,7 @@ simple_server_callback create_server_callback_from_script(char *filename, simple
 #undef PACKET_ID
 
   TCC_ADD_SYMBOL(send_chunk_packet);
+  TCC_ADD_SYMBOL(send_raw_chunk_packet);
   TCC_ADD_SYMBOL(update_tab_list);
 
   

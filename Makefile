@@ -13,16 +13,16 @@ main: main.o fast_noise_lite.o util.o protocol/libmcprotocol.a simple_server/lib
 main_flecs: main_flecs.o fast_noise_lite.o util.o protocol/libmcprotocol.a simple_server/libsimple_mc_server.a flecs_server/libflecs_mc_server.a
 	$(CC) -o $@ $^ $(CFLAGS) $(LDFLAGS) -lpcre2-8
 
-main_tcc: main_tcc.o util.o simple_server/libsimple_mc_server.a protocol/libmcprotocol.a
+main_tcc: demos/tcc/main_tcc.o util.o simple_server/libsimple_mc_server.a protocol/libmcprotocol.a
 	$(CC) -o $@ $^ $(CFLAGS) $(LDFLAGS) -ltcc
 
 protocol/libmcprotocol.a:
-	$(MAKE) -C protocol/
+	$(MAKE) CFLAGS="$(CFLAGS)" -C protocol/ 
 
 
 
 simple_server/libsimple_mc_server.a:
-	$(MAKE) -C simple_server/
+	$(MAKE) CFLAGS="$(CFLAGS)"  -C simple_server/ 
 
 flecs_server/libflecs_mc_server.a:
 	$(MAKE) -C flecs_server/
