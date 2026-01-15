@@ -101,5 +101,6 @@ void print_position(position value, int indentation);
 #define free_float(x) 
 #define free_double(x) 
 #define free_lpvec3(x) 
+#define free_position(x) 
 
 #endif // _H_RW_CERVER_

@@ -3,7 +3,7 @@
 **.a
 main
 main_tcc
+simple_terrain
 deploy.sh
 # this is just to stop getting results from it in ripgrep
-flecs_server/flecs/
 libnbt/

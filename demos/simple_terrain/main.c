@@ -216,29 +216,33 @@ void handle_packet_cb(simple_server *server, int player_num, int packet_type, ui
     /* uint8_t jump = packet.flags&0x10; */
     uint8_t is_sneaking = packet.flags&0x20;
     uint8_t is_sprinting = packet.flags&0x40;
-    entity_metadata meta;
-    meta.index = 0;
-    meta.type = 0;
-    meta.value.byte = 0;
-
-    entity_metadata meta_2;
-    meta_2.index = 6;
-    meta_2.type = 20;
-    meta_2.value.pose = 0;
-
-    if(is_sneaking) {
-      meta.value.byte |= 0x02;
-      meta_2.value.pose = 5;
-    }
-    if(is_sprinting)
-      meta.value.byte |= 0x08;
     
-    for(int i = 0; i < server->max_players; i++) {
-      if(server->player_slots[i] && i != player_num) {
-	send_set_entity_metadata(write_buf, WRITE_BUF_SIZE, server, i, player_num, meta);
-	send_set_entity_metadata(write_buf, WRITE_BUF_SIZE, server, i, player_num, meta_2);
-      }
-    }
+    /* for(int i = 0; i < server->max_players; i++) { */
+    /*   if(server->player_slots[i] && i != player_num) { */
+    /* 	send_set_entity_metadata_packet(write_buf, WRITE_BUF_SIZE, server->players[i]->conn.fd, (set_entity_metadata){ */
+    /* 	    .entity_id = player_num, */
+    /* 	      .data = (entity_metadata[1]){ */
+    /* 		(entity_metadata){ */
+    /* 		  .index = 0, */
+    /* 		  .type = 0, */
+    /* 		  .value.byte = 0 | (is_sneaking<<1) | (is_sprinting<<4) */
+    /* 		} */
+    /* 	      }, */
+    /* 	    .data_len = 1 */
+    /* 	  }); */
+    /* 	send_set_entity_metadata_packet(write_buf, WRITE_BUF_SIZE, server->players[i]->conn.fd, (set_entity_metadata){ */
+    /* 	    .entity_id = player_num, */
+    /* 	      .data = (entity_metadata[1]){ */
+    /* 		(entity_metadata){ */
+    /* 		  .index = 6, */
+    /* 		  .type = 20, */
+    /* 		  .value.pose = is_sneaking ? 5 : 0 */
+    /* 		} */
+    /* 	      }, */
+    /* 	    .data_len = 1 */
+    /* 	  }); */
+    /*   } */
+    /* } */
     free_player_input(packet);
   }
   //printf("got packet %d\n", packet_type);
@@ -334,16 +338,16 @@ void on_move_cb(simple_server *server, int player_num, mc_location old_location,
       send_update_entity_position_and_rotation_packet(write_buf, WRITE_BUF_SIZE, server->players[j]->conn.fd,
 						      (update_entity_position_and_rotation){
 							.entity_id = player_num,
-							.delta_x = new_location.x * 4096 - old_location.x,
-							.delta_y = new_location.y * 4096 - old_location.y,
-							.delta_z = new_location.z * 4096 - old_location.z,
-							.yaw = new_location.yaw/1.41,
-							.pitch = new_location.pitch/1.41,
+							.delta_x = (short)((new_location.x * 4096) - (old_location.x * 4096)),
+							.delta_y = (short)((new_location.y * 4096) - (old_location.y * 4096)),
+							.delta_z = (short)((new_location.z * 4096) - (old_location.z * 4096)),
+							.yaw = server->players[player_num]->loc.yaw/1.41,
+							.pitch = server->players[player_num]->loc.pitch/1.41,
 							.on_ground = true});
       send_set_head_rotation_packet(write_buf, WRITE_BUF_SIZE, server->players[j]->conn.fd,
 				    (set_head_rotation){
 				      .entity_id = player_num,
-				      .yaw = new_location.yaw
+				      .yaw = new_location.yaw/1.41
 				    });
     }
 };
@@ -396,17 +400,6 @@ void finish_configuration_cb(simple_server *server, int player_num) {
 				 .velocity.x = 0,
 				 .velocity.y = 0,
 				 .velocity.z = 0}); // velocity
-      entity_metadata meta;
-      /* meta.index = 18; */
-      /* meta.type = 9; */
-      /* meta.value.rotations.x = 120; */
-      /* meta.value.rotations.y = -120; */
-      /* meta.value.rotations.z = 0; */
-      /* send_set_entity_metadata(write_buf, WRITE_BUF_SIZE, server, player_num, new_id, meta); */
-      meta.index = 15;
-      meta.type = 0;
-      meta.value.byte = 0x04;
-      send_set_entity_metadata(write_buf, WRITE_BUF_SIZE, server, player_num, new_id, meta);
 
     }
     update_tab_list(write_buf, WRITE_BUF_SIZE, server);

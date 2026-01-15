@@ -119,8 +119,43 @@
 #define STOP_SOUND_ID (START_CONFIGURATION_ID+1)
 #define STORE_COOKIE_ID (STOP_SOUND_ID+1)
 #define SYSTEM_CHAT_MESSAGE_ID (STORE_COOKIE_ID+1)
+PACKET(bundle_delimiter,
+       );
+PACKET_ID(bundle_delimiter, BUNDLE_DELIMETER_ID)
 
-// clientbound
+PACKET(spawn_entity,
+       R(var_int, int32_t, eid);
+       R(uuid, uuid, entity_uuid);
+       R(var_int, int32_t, type);
+       R(double, double, x);
+       R(double, double, y);
+       R(double, double, z);
+       R(lpvec3, lpvec3, velocity);
+       R(ubyte, uint8_t, pitch);
+       R(ubyte, uint8_t, yaw);
+       R(ubyte, uint8_t, head_angle);
+       R(var_int, int32_t, data);
+       );
+PACKET_ID(spawn_entity, SPAWN_ENTITY_ID)
+
+PACKET(entity_animation,
+       R(var_int, int32_t, entity_id);
+       R(ubyte, uint8_t, animation);
+       );
+PACKET_ID(entity_animation, ENTITY_ANIMATION_ID)
+  
+PACKET(acknowledge_block_change,
+       R(var_int, int32_t, sequence_id);
+       );
+PACKET_ID(acknowledge_block_change, ACK_BLOCK_CHANGE_ID)
+
+PACKET(block_update,
+       R(position, position, location);
+       R(var_int, int32_t, block_id);
+       );
+PACKET_ID(block_update, BLOCK_UPDATE_ID)  
+  
+
 PACKET(login_play,
        R(int, int32_t, eid);
        R(bool, uint8_t, is_hardcore);
@@ -478,20 +513,6 @@ PACKET(chunk_data_and_update_light,
        );
 PACKET_ID(chunk_data_and_update_light, CHUNK_DATA_AND_UPDATE_LIGHT_ID)
 
-PACKET(spawn_entity,
-       R(var_int, int32_t, eid);
-       R(uuid, uuid, entity_uuid);
-       R(var_int, int32_t, type);
-       R(double, double, x);
-       R(double, double, y);
-       R(double, double, z);
-       R(lpvec3, lpvec3, velocity);
-       R(ubyte, uint8_t, pitch);
-       R(ubyte, uint8_t, yaw);
-       R(ubyte, uint8_t, head_angle);
-       R(var_int, int32_t, data);
-       );
-PACKET_ID(spawn_entity, SPAWN_ENTITY_ID)
 
 PACKET(player_info_remove,
        RL(uuid, uuid, player_ids, player_id_len);

@@ -6,8 +6,10 @@ LDFLAGS = -lm
 %.o: %.c
 	$(CC) -c $< $(CFLAGS) -o $@   
 
-main: main.o fast_noise_lite.o util.o protocol/libmcprotocol.a simple_server/libsimple_mc_server.a
+
+simple_terrain: demos/simple_terrain/main.o fast_noise_lite.o util.o protocol/libmcprotocol.a simple_server/libsimple_mc_server.a
 	$(CC) -o $@ $^ $(CFLAGS) $(LDFLAGS) -lpcre2-8
+
 
 
 
@@ -37,5 +39,4 @@ test_client: $(OBJ) test_client.o
 clean:
 	rm *.o -f
 	$(MAKE) -C simple_server/ clean
-	$(MAKE) -C flecs_server/ clean
 	$(MAKE) -C protocol/ clean
