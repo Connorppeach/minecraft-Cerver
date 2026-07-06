@@ -27,6 +27,20 @@ PACKET_ID(clientbound_known_packs, CLIENTBOUND_KNOWN_PACKS_ID)
 PACKET(finish_configuration,
        );
 PACKET_ID(finish_configuration, FINISH_CONFIGURATION_ID)
+
+PACKET(update_tags_tag,
+       R(var_str, lstr, tag_name);
+       RL(var_int, int, entries, entries_count);
+       )
+PACKET(update_tags_tag_list,
+       R(var_str, lstr, tag_name);
+       RL(update_tags_tag, update_tags_tag, tags, tags_count);
+       )
+
+PACKET(update_tags,
+       RL(update_tags_tag_list, update_tags_tag_list, tag_list, tag_list_count);
+       )
+PACKET_ID(update_tags, UPDATE_TAGS_ID)
 //
 PACKET(registry_data_entry,
        R(var_str, lstr, entry_id);

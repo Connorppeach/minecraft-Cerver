@@ -5,25 +5,34 @@ LDFLAGS = -lm
 
 %.o: %.c
 	$(CC) -c $< $(CFLAGS) -o $@   
+%.pic.o: %.c
+	$(CC) -fpic -c $< $(CFLAGS) -o $@   
 
 
 simple_terrain: demos/simple_terrain/main.o fast_noise_lite.o util.o protocol/libmcprotocol.a simple_server/libsimple_mc_server.a
 	$(CC) -o $@ $^ $(CFLAGS) $(LDFLAGS) -lpcre2-8
 
+server.so: demos/simple_terrain/main.pic.o fast_noise_lite.pic.o util.pic.o protocol/libmcprotocol.pic.a simple_server/libsimple_mc_server.pic.a
+	$(CC) -shared -o $@ $^ $(CFLAGS) $(LDFLAGS) -lpcre2-8
 
 
 
 main_tcc: demos/tcc/main_tcc.o util.o simple_server/libsimple_mc_server.a protocol/libmcprotocol.a
 	$(CC) -o $@ $^ $(CFLAGS) $(LDFLAGS) -ltcc
-
+.PHONY: protocol/libmcprotocol.a protocol/libmcprotocol.pic.a simple_server/libsimple_mc_server.a simple_server/libsimple_mc_server.pic.a
 protocol/libmcprotocol.a:
-	$(MAKE) CFLAGS="$(CFLAGS)" -C protocol/ 
+	$(MAKE) CFLAGS="$(CFLAGS)" -C protocol/ libmcprotocol.a
+
+protocol/libmcprotocol.pic.a:
+	$(MAKE) CFLAGS="$(CFLAGS)" -C protocol/ libmcprotocol.pic.a
 
 
 
 simple_server/libsimple_mc_server.a:
-	$(MAKE) CFLAGS="$(CFLAGS)"  -C simple_server/ 
+	$(MAKE) CFLAGS="$(CFLAGS)"  -C simple_server/  libsimple_mc_server.a
 
+simple_server/libsimple_mc_server.pic.a:
+	$(MAKE) CFLAGS="$(CFLAGS)" -C simple_server/ libsimple_mc_server.pic.a
 
 
 fast_noise_lite.o: fast_noise_lite.c 

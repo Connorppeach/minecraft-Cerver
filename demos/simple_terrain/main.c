@@ -1,6 +1,7 @@
 #include <errno.h>
+#include <stdint.h>
 
-#include "protocol/rw.h"
+#include <protocol/rw.h>
 #include "protocol/packets.h"
 #include "blocks.h"
 #include "simple_server/util.h"
@@ -13,7 +14,7 @@
 #include "util.h"
 #define FILTER_IMPLEMENTATION
 #include "filter.h"
-#define PORT 25545   // port we're listening on
+#define PORT 25575   // port we're listening on
 #define WRITE_BUF_SIZE 40000
 #define CONSOLE_READ_BUF_SIZE 256
 
@@ -159,7 +160,7 @@ void send_chunks(simple_server *server, int player_num, int32_t x, int32_t z) {
 }
 void send_set_entity_metadata(uint8_t *write_buf, int32_t write_buf_size, simple_server *server, int player_num, int32_t entity_id, entity_metadata meta) {
   set_entity_metadata packet;
-  packet.entity_id = entity_id;
+  packet.entity_id = entity_id+1;
   entity_metadata meta_list[1] = { meta };
   packet.data = meta_list;
   packet.data_len = 1;
@@ -217,33 +218,38 @@ void handle_packet_cb(simple_server *server, int player_num, int packet_type, ui
     uint8_t is_sneaking = packet.flags&0x20;
     uint8_t is_sprinting = packet.flags&0x40;
     
-    /* for(int i = 0; i < server->max_players; i++) { */
-    /*   if(server->player_slots[i] && i != player_num) { */
-    /* 	send_set_entity_metadata_packet(write_buf, WRITE_BUF_SIZE, server->players[i]->conn.fd, (set_entity_metadata){ */
-    /* 	    .entity_id = player_num, */
-    /* 	      .data = (entity_metadata[1]){ */
-    /* 		(entity_metadata){ */
-    /* 		  .index = 0, */
-    /* 		  .type = 0, */
-    /* 		  .value.byte = 0 | (is_sneaking<<1) | (is_sprinting<<4) */
-    /* 		} */
-    /* 	      }, */
-    /* 	    .data_len = 1 */
-    /* 	  }); */
-    /* 	send_set_entity_metadata_packet(write_buf, WRITE_BUF_SIZE, server->players[i]->conn.fd, (set_entity_metadata){ */
-    /* 	    .entity_id = player_num, */
-    /* 	      .data = (entity_metadata[1]){ */
-    /* 		(entity_metadata){ */
-    /* 		  .index = 6, */
-    /* 		  .type = 20, */
-    /* 		  .value.pose = is_sneaking ? 5 : 0 */
-    /* 		} */
-    /* 	      }, */
-    /* 	    .data_len = 1 */
-    /* 	  }); */
-    /*   } */
-    /* } */
+    for(int i = 0; i < server->max_players; i++) {
+      if(server->player_slots[i] && i != player_num) {
+	send_set_entity_metadata_packet(write_buf, WRITE_BUF_SIZE, server->players[i]->conn.fd, (set_entity_metadata){
+	    .entity_id = player_num,
+	      .data = (entity_metadata[1]){
+		(entity_metadata){
+		  .index = 0,
+		  .type = 0,
+		  .value.byte = 0 | (is_sneaking<<1) | (is_sprinting<<4)
+		}
+	      },
+	    .data_len = 1
+	  });
+	send_set_entity_metadata_packet(write_buf, WRITE_BUF_SIZE, server->players[i]->conn.fd, (set_entity_metadata){
+	    .entity_id = player_num,
+	      .data = (entity_metadata[1]){
+		(entity_metadata){
+		  .index = 6,
+		  .type = 20,
+		  .value.pose = is_sneaking ? 5 : 0
+		}
+	      },
+	    .data_len = 1
+	  });
+      }
+    }
     free_player_input(packet);
+  } else if (packet_type == PLAYER_ACTION_ID) {
+    player_action_c2s packet;
+    read_player_action_c2s(&packet_buf, &pos, buf_len, &packet);
+    print_player_action_c2s(packet, 0);
+    free_player_action_c2s(packet);
   }
   //printf("got packet %d\n", packet_type);
 }
@@ -284,7 +290,7 @@ void send_all_players_to_players(simple_server *server) {
 	   j != i) {
 	  //printf("%d\n%d\n\n", i, j);
 	  send_spawn_entity_packet(write_buf, WRITE_BUF_SIZE, server->players[j]->conn.fd,
-			    (spawn_entity){ .eid = i,
+			    (spawn_entity){ .eid = i+1,
 					    .entity_uuid = server->players[i]->uuid,
 					    .type = 155,
 					    .x = server->players[i]->loc.x,
@@ -337,7 +343,7 @@ void on_move_cb(simple_server *server, int player_num, mc_location old_location,
        j != player_num) {
       send_update_entity_position_and_rotation_packet(write_buf, WRITE_BUF_SIZE, server->players[j]->conn.fd,
 						      (update_entity_position_and_rotation){
-							.entity_id = player_num,
+							.entity_id = player_num+1,
 							.delta_x = (short)((new_location.x * 4096) - (old_location.x * 4096)),
 							.delta_y = (short)((new_location.y * 4096) - (old_location.y * 4096)),
 							.delta_z = (short)((new_location.z * 4096) - (old_location.z * 4096)),
@@ -346,7 +352,7 @@ void on_move_cb(simple_server *server, int player_num, mc_location old_location,
 							.on_ground = true});
       send_set_head_rotation_packet(write_buf, WRITE_BUF_SIZE, server->players[j]->conn.fd,
 				    (set_head_rotation){
-				      .entity_id = player_num,
+				      .entity_id = player_num+1,
 				      .yaw = new_location.yaw/1.41
 				    });
     }
@@ -387,7 +393,7 @@ void finish_configuration_cb(simple_server *server, int player_num) {
       uuid temp_uuid = { -1, -1 };
       send_spawn_entity_packet(write_buf, WRITE_BUF_SIZE, server->players[player_num]->conn.fd, // send to me
 			       (spawn_entity){
-				 .eid = new_id, // entity id
+				 .eid = new_id+1, // entity id
 				 .entity_uuid = temp_uuid, // uuid
 				 .type = 5, // entity type
 				 .x = 8.5,

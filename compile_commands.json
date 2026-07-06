@@ -1,0 +1,18 @@
+[
+  {
+    "file": "simple_server.c",
+    "arguments": [
+      "/usr/bin/gcc",
+      "-c",
+      "simple_server.c",
+      "-I.",
+      "-ggdb",
+      "-Wall",
+      "-O0",
+      "-o",
+      "simple_server.o"
+    ],
+    "directory": "/home/connor/cerver/simple_server",
+    "output": "simple_server.o"
+  }
+]

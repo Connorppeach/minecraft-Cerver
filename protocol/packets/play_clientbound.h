@@ -38,7 +38,8 @@
 #define EXPLOSION_ID (TELEPORT_ENTITY_ID+1)
 #define UNLOAD_CHUNK_ID (EXPLOSION_ID+1)
 #define GAME_EVENT_ID (UNLOAD_CHUNK_ID+1)
-#define GAME_TEST_HIGHLIGHT_POSITION_ID (GAME_EVENT_ID+1)
+#define GAME_RULE_VALUES_ID (GAME_EVENT_ID+1)
+#define GAME_TEST_HIGHLIGHT_POSITION_ID (GAME_RULE_VALUES_ID+1)
 #define OPEN_HORSE_SCREEN_ID (GAME_TEST_HIGHLIGHT_POSITION_ID+1)
 #define HURT_ANIMATION_ID (OPEN_HORSE_SCREEN_ID+1)
 #define INIT_WORLD_BORDER_ID (HURT_ANIMATION_ID+1)
@@ -48,7 +49,8 @@
 #define PARTICLE_ID (WORLD_EVENT_ID+1)
 #define UPDATE_LIGHT_ID (PARTICLE_ID+1)
 #define LOGIN_PLAY_ID (UPDATE_LIGHT_ID+1)
-#define MAP_DATA_ID (LOGIN_PLAY_ID+1)
+#define LOW_DISK_SPACE_WARNING_ID (LOGIN_PLAY_ID+1)
+#define MAP_DATA_ID (LOW_DISK_SPACE_WARNING_ID+1)
 #define MERCHANT_OFFERS_ID (MAP_DATA_ID+1)
 #define UPDATE_ENTITY_POSITION_ID (MERCHANT_OFFERS_ID+1)
 #define UPDATE_ENTITY_POSITION_AND_ROTATION_ID (UPDATE_ENTITY_POSITION_ID+1)
@@ -198,6 +200,7 @@ PACKET(login_play,
        position death_location;
 #endif
        R(var_int, int32_t, portal_cooldown);
+       R(bool, uint8_t, online_mode);
        R(var_int, int32_t, sea_level);
        R(bool, uint8_t, enforces_secure_chat);
        );
@@ -495,6 +498,7 @@ int create_paletted_container_from_entries(int32_t *block_states, uint8_t min_bp
 
 PACKET(chunk_section,
        R(short, int16_t, block_count);
+       R(short, int16_t, fluid_count);
        R(paletted_container, paletted_container, block_states);
        R(paletted_container, paletted_container, biomes);
        );

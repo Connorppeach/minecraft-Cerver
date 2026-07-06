@@ -37,6 +37,7 @@ void player_load_chunks(simple_server *server, int player_num, int32_t x, int32_
   }
   send_raw_chunk_packet(write_buf, WRITE_BUF_SIZE, server->players[player_num]->conn.fd, chunk_data, 24, x, z);
 }
+
 void send_all_players_to_players(simple_server *server) {
   for(int i = 0; i < server->max_players; i++) {
     if(server->player_slots[i]) {

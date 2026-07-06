@@ -1,5 +1,5 @@
 #include "simple_server.h"
-
+#include "registry.h"
 #include <time.h>
 
 
@@ -50,7 +50,7 @@ void deallocate_player(simple_server *server, int player_id) {
 
 
 
-#define WRITE_BUF_SIMPLE_SERVER_SIZE 1024
+#define WRITE_BUF_SIMPLE_SERVER_SIZE 2519
 uint8_t write_buf_simple_server[WRITE_BUF_SIMPLE_SERVER_SIZE];
 
 void on_chunk_move(simple_server *server, int player_num, mc_location old_location, mc_location new_location, simple_server_callback cb) {
@@ -135,10 +135,10 @@ int handle_player_packet(simple_server *server, int player_num, uint8_t *packet_
   if (m_player->conn.connection_state == 0 && packet_type == HANDSHAKE_ID) {
     handshake shake;
     int error = read_handshake(&buf_ptr, &pos, buf_len, &shake);
-    //print_handshake(shake);
+    print_handshake(shake, 0);
 
     // we dont handle anything other than login right now
-    if (shake.intent != 2) {
+    if (shake.intent != 2 && shake.intent != 1) {
       printf("error reading intent: %d\n", error);
       deallocate_player(server, player_num);
       free(raw_data);
@@ -146,11 +146,18 @@ int handle_player_packet(simple_server *server, int player_num, uint8_t *packet_
     }
     free_handshake(shake);
     m_player->conn.connection_state = shake.intent;
+  } else if (m_player->conn.connection_state == 1) {
+    if (packet_type == STATUS_REQUEST_ID) {
+      send_status_response_packet(write_buf_simple_server, WRITE_BUF_SIMPLE_SERVER_SIZE, server->players[player_num]->conn.fd,
+			   (status_response){
+			     .json_response = lstr_static("{\n    \"version\": {\n        \"name\": \"1.21.11\",\n        \"protocol\": 775\n    },\n    \"players\": {\n        \"max\": 2028,\n        \"online\": 2026,\n        \"sample\": [\n            {\n                \"name\": \"thinkofdeath\",\n                \"id\": \"4566e69f-c907-48ee-8d71-d7ba5aa00d20\"\n            }\n        ]\n    },\n    \"description\": {\n        \"text\": \"Hello, world!\"\n    },\n    \"favicon\": \"data:image\/png;base64,<data>\",\n    \"enforcesSecureChat\": false\n}")
+			   });
+    }
   } else if (m_player->conn.connection_state == 2) {
     if (packet_type == LOGIN_START_ID) {
       login_start login_s;
       read_login_start(&buf_ptr, &pos, buf_len, &login_s);
-      //print_login_start(login_s);
+      print_login_start(login_s, 0);
       int i;
       for (i = 0; i < 16; i++) {
 	if(i < login_s.name.len)
@@ -170,13 +177,13 @@ int handle_player_packet(simple_server *server, int player_num, uint8_t *packet_
       send_login_success_packet(write_buf_simple_server,
 				WRITE_BUF_SIMPLE_SERVER_SIZE,
 				server->players[player_num]->conn.fd,
-				(login_success){{login_s.uuid, login_s.name, NULL, 0}});
+				(login_success){ .profile = {.uuid = login_s.uuid, .username = login_s.name, .game_profile_property_count = 0}, .session_id = (uuid){}});
       free_login_start(login_s);
       
     } else if (packet_type == LOGIN_ACKNOWLEDGED_ID) {
-      //puts("\nlogin finish\n");
+      puts("\nlogin finish\n");
       m_player->conn.connection_state = 3;
-      known_pack packs[] = { (known_pack){lstr_static("minecraft"), lstr_static("core"), lstr_static("1.21.11")} };
+      known_pack packs[] = { (known_pack){lstr_static("minecraft"), lstr_static("core"), lstr_static("26.2")} };
 
       send_clientbound_known_packs_packet(write_buf_simple_server,
 					  WRITE_BUF_SIMPLE_SERVER_SIZE,
@@ -188,628 +195,33 @@ int handle_player_packet(simple_server *server, int player_num, uint8_t *packet_
     if (packet_type == CLIENT_INFORMATION_CONFIGURATION_ID) {
       client_information_configuration config_s;
       read_client_information_configuration(&buf_ptr, &pos, buf_len, &config_s);
+      print_client_information_configuration(config_s, 0);
       free_client_information_configuration(config_s);
       
     } else if (packet_type == SERVERBOUND_KNOWN_PACKS_CONFIGURATION_ID) {
       serverbound_known_packs config_s;
       read_serverbound_known_packs(&buf_ptr, &pos, buf_len, &config_s);
-      //print_serverbound_known_packs(config_s);
+      print_serverbound_known_packs(config_s, 0);
       free_serverbound_known_packs(config_s);
-      registry_data reg_packet;
       uint8_t *packet_ptr;
-      // send emtpy registries
-      {
-	packet_ptr = write_buf_simple_server+4;
-	max = 0;
-	reg_packet.registry_id = lstr_static("minecraft:banner_pattern");
-	reg_packet.entries = NULL;
-	reg_packet.num_entries = 0;
-
-	write_var_int(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, REGISTRY_DATA_ID);
-	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, reg_packet);
-	//print_registry_data(reg_packet);
-	send_packet(write_buf_simple_server, max, m_player->conn.fd);
-      }
-      {
-	packet_ptr = write_buf_simple_server+4;
-	max = 0;
-	reg_packet.registry_id = lstr_static("minecraft:chat_type");
-
-	write_var_int(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, REGISTRY_DATA_ID);
-	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, reg_packet);
-	//print_registry_data(reg_packet);
-	send_packet(write_buf_simple_server, max, m_player->conn.fd);
-      }
-      char damage_types_str[][32] = { "minecraft:player_attack", "minecraft:cactus", "minecraft:campfire", "minecraft:cramming", "minecraft:dragon_breath", "minecraft:drown", "minecraft:dry_out", "minecraft:ender_pearl", "minecraft:fall", "minecraft:fly_into_wall", "minecraft:freeze", "minecraft:generic", "minecraft:generic_kill", "minecraft:hot_floor", "minecraft:in_fire", "minecraft:in_wall", "minecraft:lava", "minecraft:lightning_bolt", "minecraft:magic", "minecraft:on_fire", "minecraft:out_of_world", "minecraft:outside_border", "minecraft:stalagmite", "minecraft:starve", "minecraft:sweet_berry_bush", "minecraft:wither"}; 
-      for (int i = 0; i < sizeof(damage_types_str) / sizeof(damage_types_str[0]); i++)
-	{
-	  packet_ptr = write_buf_simple_server+4;
-	  max = 0;
-	  reg_packet.registry_id = lstr_static("minecraft:damage_type");
-	  /* reg_packet.entries = NULL; */
-	  /* reg_packet.num_entries = 0; */
-	  nbt_tag_t* cactus_damage = nbt_new_tag_compound();
-	  nbt_tag_t* message_id = nbt_new_tag_string(damage_types_str[i], strlen(damage_types_str[i]));
-	  nbt_tag_t* scaling = nbt_new_tag_string("never", strlen("never"));
-	  nbt_tag_t* exhaustion = nbt_new_tag_float(0.0);
-	  nbt_set_tag_name(message_id, "message_id", strlen("message_id"));
-	  nbt_set_tag_name(scaling, "scaling", strlen("scaling"));
-	  nbt_set_tag_name(exhaustion, "exhaustion", strlen("exhaustion"));
-	  
-	  nbt_tag_compound_append(cactus_damage, scaling);
-	  nbt_tag_compound_append(cactus_damage, message_id);
-	  nbt_tag_compound_append(cactus_damage, exhaustion);
-	
-	
-	registry_data_entry damage_types[] = { { lstr_static(damage_types_str[i]), &cactus_damage } };
-	reg_packet.entries = damage_types;
-	reg_packet.num_entries = sizeof(damage_types) / sizeof(damage_types[0]);
-
-	write_var_int(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, REGISTRY_DATA_ID);
-	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, reg_packet);
-	//print_registry_data(reg_packet);
-	nbt_free_tag(cactus_damage);
-	
-	send_packet(write_buf_simple_server, max, m_player->conn.fd);
-      }
-      {
-	packet_ptr = write_buf_simple_server+4;
-	max = 0;
-	reg_packet.registry_id = lstr_static("minecraft:dialog");
-	reg_packet.entries = NULL;
-	reg_packet.num_entries = 0;
-
-	write_var_int(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, REGISTRY_DATA_ID);
-	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, reg_packet);
-	//print_registry_data(reg_packet);
-	send_packet(write_buf_simple_server, max, m_player->conn.fd);
-      }
-      {
-	packet_ptr = write_buf_simple_server+4;
-	max = 0;
-	reg_packet.registry_id = lstr_static("minecraft:dimension_type");
-	/* reg_packet.entries = NULL; */
-	/* reg_packet.num_entries = 0; */
-	nbt_tag_t* overworld = nbt_new_tag_compound();
-	{
-	  nbt_tag_t* coordinate_scale = nbt_new_tag_float(1.0);
-	  nbt_set_tag_name(coordinate_scale, "coordinate_scale", strlen("coordinate_scale"));
-	  nbt_tag_compound_append(overworld, coordinate_scale);
-
-	  nbt_tag_t* has_skylight = nbt_new_tag_byte(0);
-	  nbt_set_tag_name(has_skylight, "has_skylight", strlen("has_skylight"));
-	  nbt_tag_compound_append(overworld, has_skylight);
-
-	  nbt_tag_t* has_ceiling = nbt_new_tag_byte(0);
-	  nbt_set_tag_name(has_ceiling, "has_ceiling", strlen("has_ceiling"));
-	  nbt_tag_compound_append(overworld, has_ceiling);
-
-	  nbt_tag_t* has_fixed_time = nbt_new_tag_byte(0);
-	  nbt_set_tag_name(has_fixed_time, "has_fixed_time", strlen("has_fixed_time"));
-	  nbt_tag_compound_append(overworld, has_fixed_time);
-
-	  // todo -- move to enviromental flags for .11
-	  
-	  nbt_tag_t* piglin_safe = nbt_new_tag_byte(0);
-	  nbt_set_tag_name(piglin_safe, "piglin_safe", strlen("piglin_safe"));
-	  nbt_tag_compound_append(overworld, piglin_safe);
-
-	  nbt_tag_t* has_raids = nbt_new_tag_byte(0);
-	  nbt_set_tag_name(has_raids, "has_raids", strlen("has_raids"));
-	  nbt_tag_compound_append(overworld, has_raids);
-
-	  nbt_tag_t* respawn_anchor_works = nbt_new_tag_byte(0);
-	  nbt_set_tag_name(respawn_anchor_works, "respawn_anchor_works", strlen("respawn_anchor_works"));
-	  nbt_tag_compound_append(overworld, respawn_anchor_works);
-
-	  nbt_tag_t* bed_works = nbt_new_tag_byte(0);
-	  nbt_set_tag_name(bed_works, "bed_works", strlen("bed_works"));
-	  nbt_tag_compound_append(overworld, bed_works);
-
-	  nbt_tag_t* ultrawarm = nbt_new_tag_byte(0);
-	  nbt_set_tag_name(ultrawarm, "ultrawarm", strlen("ultrawarm"));
-	  nbt_tag_compound_append(overworld, ultrawarm);
-
-	  nbt_tag_t* natural = nbt_new_tag_byte(0);
-	  nbt_set_tag_name(natural, "natural", strlen("natural"));
-	  nbt_tag_compound_append(overworld, natural);
-	  
-	  
-	  nbt_tag_t* cloud_height = nbt_new_tag_int(100);
-	  nbt_set_tag_name(cloud_height, "cloud_height", strlen("cloud_height"));
-	  nbt_tag_compound_append(overworld, cloud_height);
-
-	  // end
-	  
-	  nbt_tag_t* ambient_light = nbt_new_tag_float(1.0);
-	  nbt_set_tag_name(ambient_light, "ambient_light", strlen("ambient_light"));
-	  nbt_tag_compound_append(overworld, ambient_light);
-
-	  nbt_tag_t* min_y = nbt_new_tag_int(0);
-	  nbt_set_tag_name(min_y, "min_y", strlen("min_y"));
-	  nbt_tag_compound_append(overworld, min_y);
-	  
-	  nbt_tag_t* height = nbt_new_tag_int(server->world_data.world_height);
-	  nbt_set_tag_name(height, "height", strlen("height"));
-	  nbt_tag_compound_append(overworld, height);
-
-	  nbt_tag_t* logical_height = nbt_new_tag_int(0);
-	  nbt_set_tag_name(logical_height, "logical_height", strlen("logical_height"));
-	  nbt_tag_compound_append(overworld, logical_height);
-
-	  nbt_tag_t* monster_spawn_light_level = nbt_new_tag_int(0);
-	  nbt_set_tag_name(monster_spawn_light_level, "monster_spawn_light_level", strlen("monster_spawn_light_level"));
-	  nbt_tag_compound_append(overworld, monster_spawn_light_level);
-
-	  nbt_tag_t* monster_spawn_block_light_limit = nbt_new_tag_int(0);
-	  nbt_set_tag_name(monster_spawn_block_light_limit, "monster_spawn_block_light_limit", strlen("monster_spawn_block_light_limit"));
-	  nbt_tag_compound_append(overworld, monster_spawn_block_light_limit);
-
-	  nbt_tag_t* infiniburn = nbt_new_tag_string("#infiniburn_overworld", strlen("#infiniburn_overworld"));
-	  nbt_set_tag_name(infiniburn, "infiniburn", strlen("infiniburn"));
-	  nbt_tag_compound_append(overworld, infiniburn);
-
-	  nbt_tag_t* skybox = nbt_new_tag_string("overworld", strlen("overworld"));
-	  nbt_set_tag_name(skybox, "skybox", strlen("skybox"));
-	  nbt_tag_compound_append(overworld, skybox);
-
-	  /* nbt_tag_t* cardinal_light = nbt_new_tag_string("cardinal_light", strlen("cardinal_light")); */
-	  /* nbt_set_tag_name(cardinal_light, "cardinal_light", strlen("cardinal_light")); */
-	  /* nbt_tag_compound_append(overworld, cardinal_light); */
-
-	  
-	}
-	
-	registry_data_entry damage_types[] = { { lstr_static("minecraft:overworld"), &overworld } };
-	reg_packet.entries = damage_types;
-	reg_packet.num_entries = sizeof(damage_types) / sizeof(damage_types[0]);
-
-	write_var_int(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, REGISTRY_DATA_ID);
-	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, reg_packet);
-	//print_registry_data(reg_packet);
-	nbt_free_tag(overworld);
-	
-	send_packet(write_buf_simple_server, max, m_player->conn.fd);
-      }
-      {
-	packet_ptr = write_buf_simple_server+4;
-	max = 0;
-	reg_packet.registry_id = lstr_static("minecraft:enchantment");
-	reg_packet.entries = NULL;
-	reg_packet.num_entries = 0;
-
-	write_var_int(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, REGISTRY_DATA_ID);
-	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, reg_packet);
-	//print_registry_data(reg_packet);
-	send_packet(write_buf_simple_server, max, m_player->conn.fd);
-      }
-      {
-	packet_ptr = write_buf_simple_server+4;
-	max = 0;
-	reg_packet.registry_id = lstr_static("minecraft:instrument");
-	reg_packet.entries = NULL;
-	reg_packet.num_entries = 0;
-
-	write_var_int(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, REGISTRY_DATA_ID);
-	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, reg_packet);
-	//print_registry_data(reg_packet);
-	send_packet(write_buf_simple_server, max, m_player->conn.fd);
-      }      
-      {
-	packet_ptr = write_buf_simple_server+4;
-	max = 0;
-	reg_packet.registry_id = lstr_static("minecraft:jukebox_song");
-	reg_packet.entries = NULL;
-	reg_packet.num_entries = 0;
-
-	write_var_int(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, REGISTRY_DATA_ID);
-	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, reg_packet);
-	//print_registry_data(reg_packet);
-	send_packet(write_buf_simple_server, max, m_player->conn.fd);
-      }
-      {
-	packet_ptr = write_buf_simple_server+4;
-	max = 0;
-	reg_packet.registry_id = lstr_static("minecraft:painting_variant");
-	/* reg_packet.entries = NULL; */
-	/* reg_packet.num_entries = 0; */
-	nbt_tag_t* overworld = nbt_new_tag_compound();
-	{
-	  nbt_tag_t* asset_id = nbt_new_tag_string("minecraft:earth", strlen("minecraft:earth"));
-	  nbt_set_tag_name(asset_id, "asset_id", strlen("asset_id"));
-	  nbt_tag_compound_append(overworld, asset_id);
-	  
-	  nbt_tag_t* width = nbt_new_tag_int(16);
-	  nbt_set_tag_name(width, "width", strlen("width"));
-	  nbt_tag_compound_append(overworld, width);
-
-	  
-	  nbt_tag_t* height = nbt_new_tag_int(16);
-	  nbt_set_tag_name(height, "height", strlen("height"));
-	  nbt_tag_compound_append(overworld, height);
-
-
-
-	  nbt_tag_t* title = nbt_new_tag_string("title", strlen("title"));
-	  nbt_set_tag_name(title, "title", strlen("title"));
-	  nbt_tag_compound_append(overworld, title);
-
-	  nbt_tag_t* author = nbt_new_tag_string("author", strlen("author"));
-	  nbt_set_tag_name(author, "author", strlen("author"));
-	  nbt_tag_compound_append(overworld, author);
-
-	  
-	}
-	
-	registry_data_entry damage_types[] = { { lstr_static("minecraft:earth"), &overworld } };
-	reg_packet.entries = damage_types;
-	reg_packet.num_entries = sizeof(damage_types) / sizeof(damage_types[0]);
-
-	write_var_int(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, REGISTRY_DATA_ID);
-	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, reg_packet);
-	//print_registry_data(reg_packet);
-	nbt_free_tag(overworld);
-	
-	send_packet(write_buf_simple_server, max, m_player->conn.fd);
-      }
-      
-      {
-	packet_ptr = write_buf_simple_server+4;
-	max = 0;
-	reg_packet.registry_id = lstr_static("minecraft:test_environment");
-	reg_packet.entries = NULL;
-	reg_packet.num_entries = 0;
-
-	write_var_int(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, REGISTRY_DATA_ID);
-	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, reg_packet);
-	//print_registry_data(reg_packet);
-	send_packet(write_buf_simple_server, max, m_player->conn.fd);
-      }
-      {
-	packet_ptr = write_buf_simple_server+4;
-	max = 0;
-	reg_packet.registry_id = lstr_static("minecraft:test_instance");
-	reg_packet.entries = NULL;
-	reg_packet.num_entries = 0;
-
-	write_var_int(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, REGISTRY_DATA_ID);
-	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, reg_packet);
-	//print_registry_data(reg_packet);
-	send_packet(write_buf_simple_server, max, m_player->conn.fd);
-      }
-      {
-	packet_ptr = write_buf_simple_server+4;
-	max = 0;
-	reg_packet.registry_id = lstr_static("minecraft:trim_material");
-	reg_packet.entries = NULL;
-	reg_packet.num_entries = 0;
-
-	write_var_int(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, REGISTRY_DATA_ID);
-	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, reg_packet);
-	//print_registry_data(reg_packet);
-	send_packet(write_buf_simple_server, max, m_player->conn.fd);
-      }
-      {
-	packet_ptr = write_buf_simple_server+4;
-	max = 0;
-	reg_packet.registry_id = lstr_static("minecraft:trim_pattern");
-	reg_packet.entries = NULL;
-	reg_packet.num_entries = 0;
-
-	write_var_int(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, REGISTRY_DATA_ID);
-	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, reg_packet);
-	//print_registry_data(reg_packet);
-	send_packet(write_buf_simple_server, max, m_player->conn.fd);
-      }
-      {
-	packet_ptr = write_buf_simple_server+4;
-	max = 0;
-	reg_packet.registry_id = lstr_static("minecraft:worldgen/biome");
-	nbt_tag_t* overworld = nbt_new_tag_compound();
-	{
-	  nbt_tag_t* has_precipitation = nbt_new_tag_byte(0);
-	  nbt_set_tag_name(has_precipitation, "has_precipitation", strlen("has_precipitation"));
-	  nbt_tag_compound_append(overworld, has_precipitation);
-
-	  nbt_tag_t* temperature = nbt_new_tag_float(0.2);
-	  nbt_set_tag_name(temperature, "temperature", strlen("temperature"));
-	  nbt_tag_compound_append(overworld, temperature);
-
-	  nbt_tag_t* downfall = nbt_new_tag_float(0.2);
-	  nbt_set_tag_name(downfall, "downfall", strlen("downfall"));
-	  nbt_tag_compound_append(overworld, downfall);
-	  {
-	    nbt_tag_t* effects = nbt_new_tag_compound();
-	    nbt_set_tag_name(effects, "effects", strlen("effects"));
-
-	    nbt_tag_t* water_color = nbt_new_tag_int(1);
-	    nbt_set_tag_name(water_color, "water_color", strlen("water_color"));
-	    nbt_tag_compound_append(effects, water_color);
-
-	    nbt_tag_t* fog_color = nbt_new_tag_int(32);
-	    nbt_set_tag_name(fog_color, "fog_color", strlen("fog_color"));
-	    nbt_tag_compound_append(effects, fog_color);
-
-
-	    nbt_tag_t* water_fog_color = nbt_new_tag_int(32);
-	    nbt_set_tag_name(water_fog_color, "water_fog_color", strlen("water_fog_color"));
-	    nbt_tag_compound_append(effects, water_fog_color);
-
-	    nbt_tag_t* sky_color = nbt_new_tag_int(3200252);
-	    nbt_set_tag_name(sky_color, "sky_color", strlen("sky_color"));
-	    nbt_tag_compound_append(effects, sky_color);
-	    
-	    
-	    
-	    nbt_tag_compound_append(overworld, effects);
-	    
-	  }
-	  
-	}
-	
-	registry_data_entry damage_types[] = { { lstr_static("minecraft:plains"), &overworld } };
-	reg_packet.entries = damage_types;
-	reg_packet.num_entries = sizeof(damage_types) / sizeof(damage_types[0]);
-
-	write_var_int(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, REGISTRY_DATA_ID);
-	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, reg_packet);
-	//print_registry_data(reg_packet);
-	nbt_free_tag(overworld);
-	
-	send_packet(write_buf_simple_server, max, m_player->conn.fd);
-      }
-      {
-	packet_ptr = write_buf_simple_server+4;
-	max = 0;
-	reg_packet.registry_id = lstr_static("minecraft:cat_variant");
-	/* reg_packet.entries = NULL; */
-	/* reg_packet.num_entries = 0; */
-	nbt_tag_t* overworld = nbt_new_tag_compound();
-	{
-	  nbt_tag_t* asset_id = nbt_new_tag_string("minecraft:pig", strlen("minecraft:pig"));
-	  nbt_set_tag_name(asset_id, "asset_id", strlen("asset_id"));
-	  nbt_tag_compound_append(overworld, asset_id);
-	}
-	
-	registry_data_entry damage_types[] = { { lstr_static("minecraft:cat"), &overworld } };
-	reg_packet.entries = damage_types;
-	reg_packet.num_entries = sizeof(damage_types) / sizeof(damage_types[0]);
-
-	write_var_int(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, REGISTRY_DATA_ID);
-	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, reg_packet);
-	//print_registry_data(reg_packet);
-	nbt_free_tag(overworld);
-	
-	send_packet(write_buf_simple_server, max, m_player->conn.fd);
-      }
-      {
-	packet_ptr = write_buf_simple_server+4;
-	max = 0;
-	reg_packet.registry_id = lstr_static("minecraft:zombie_nautilus_variant");
-	/* reg_packet.entries = NULL; */
-	/* reg_packet.num_entries = 0; */
-	nbt_tag_t* overworld = nbt_new_tag_compound();
-	{
-	  nbt_tag_t* asset_id = nbt_new_tag_string("minecraft:pig", strlen("minecraft:pig"));
-	  nbt_set_tag_name(asset_id, "asset_id", strlen("asset_id"));
-	  nbt_tag_compound_append(overworld, asset_id);
-	}
-	
-	registry_data_entry damage_types[] = { { lstr_static("minecraft:cat"), &overworld } };
-	reg_packet.entries = damage_types;
-	reg_packet.num_entries = sizeof(damage_types) / sizeof(damage_types[0]);
-
-	write_var_int(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, REGISTRY_DATA_ID);
-	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, reg_packet);
-	//print_registry_data(reg_packet);
-	nbt_free_tag(overworld);
-	
-	send_packet(write_buf_simple_server, max, m_player->conn.fd);
-      }
-      {
-	packet_ptr = write_buf_simple_server+4;
-	max = 0;
-	reg_packet.registry_id = lstr_static("minecraft:chicken_variant");
-	/* reg_packet.entries = NULL; */
-	/* reg_packet.num_entries = 0; */
-	nbt_tag_t* overworld = nbt_new_tag_compound();
-	{
-	  nbt_tag_t* asset_id = nbt_new_tag_string("minecraft:chicken_variant", strlen("minecraft:chicken_variant"));
-	  nbt_set_tag_name(asset_id, "asset_id", strlen("asset_id"));
-	  nbt_tag_compound_append(overworld, asset_id);
-
-	  nbt_tag_t* model = nbt_new_tag_string("normal", strlen("normal"));
-	  nbt_set_tag_name(model, "model", strlen("model"));
-	  nbt_tag_compound_append(overworld, model);
-	}
-	
-	registry_data_entry damage_types[] = { { lstr_static("minecraft:cat"), &overworld } };
-	reg_packet.entries = damage_types;
-	reg_packet.num_entries = sizeof(damage_types) / sizeof(damage_types[0]);
-
-	write_var_int(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, REGISTRY_DATA_ID);
-	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, reg_packet);
-	//print_registry_data(reg_packet);
-	nbt_free_tag(overworld);
-	
-	send_packet(write_buf_simple_server, max, m_player->conn.fd);
-      }
-      {
-	packet_ptr = write_buf_simple_server+4;
-	max = 0;
-	reg_packet.registry_id = lstr_static("minecraft:cow_variant");
-	/* reg_packet.entries = NULL; */
-	/* reg_packet.num_entries = 0; */
-	nbt_tag_t* overworld = nbt_new_tag_compound();
-	{
-	  nbt_tag_t* asset_id = nbt_new_tag_string("minecraft:chicken_variant", strlen("minecraft:chicken_variant"));
-	  nbt_set_tag_name(asset_id, "asset_id", strlen("asset_id"));
-	  nbt_tag_compound_append(overworld, asset_id);
-
-	  nbt_tag_t* model = nbt_new_tag_string("normal", strlen("normal"));
-	  nbt_set_tag_name(model, "model", strlen("model"));
-	  nbt_tag_compound_append(overworld, model);
-	}
-	
-	registry_data_entry damage_types[] = { { lstr_static("minecraft:cat"), &overworld } };
-	reg_packet.entries = damage_types;
-	reg_packet.num_entries = sizeof(damage_types) / sizeof(damage_types[0]);
-
-	write_var_int(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, REGISTRY_DATA_ID);
-	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, reg_packet);
-	//print_registry_data(reg_packet);
-	nbt_free_tag(overworld);
-	
-	send_packet(write_buf_simple_server, max, m_player->conn.fd);
-      }
-      {
-	packet_ptr = write_buf_simple_server+4;
-	max = 0;
-	reg_packet.registry_id = lstr_static("minecraft:frog_variant");
-	/* reg_packet.entries = NULL; */
-	/* reg_packet.num_entries = 0; */
-	nbt_tag_t* overworld = nbt_new_tag_compound();
-	{
-	  nbt_tag_t* asset_id = nbt_new_tag_string("minecraft:pig", strlen("minecraft:pig"));
-	  nbt_set_tag_name(asset_id, "asset_id", strlen("asset_id"));
-	  nbt_tag_compound_append(overworld, asset_id);
-	}
-	
-	registry_data_entry damage_types[] = { { lstr_static("minecraft:cat"), &overworld } };
-	reg_packet.entries = damage_types;
-	reg_packet.num_entries = sizeof(damage_types) / sizeof(damage_types[0]);
-
-	write_var_int(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, REGISTRY_DATA_ID);
-	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, reg_packet);
-	//print_registry_data(reg_packet);
-	nbt_free_tag(overworld);
-	
-	send_packet(write_buf_simple_server, max, m_player->conn.fd);
-      }
-      {
-	packet_ptr = write_buf_simple_server+4;
-	max = 0;
-	reg_packet.registry_id = lstr_static("minecraft:pig_variant");
-	/* reg_packet.entries = NULL; */
-	/* reg_packet.num_entries = 0; */
-	nbt_tag_t* overworld = nbt_new_tag_compound();
-	{
-	  nbt_tag_t* asset_id = nbt_new_tag_string("minecraft:chicken_variant", strlen("minecraft:chicken_variant"));
-	  nbt_set_tag_name(asset_id, "asset_id", strlen("asset_id"));
-	  nbt_tag_compound_append(overworld, asset_id);
-
-	  nbt_tag_t* model = nbt_new_tag_string("normal", strlen("normal"));
-	  nbt_set_tag_name(model, "model", strlen("model"));
-	  nbt_tag_compound_append(overworld, model);
-	}
-	
-	registry_data_entry damage_types[] = { { lstr_static("minecraft:cat"), &overworld } };
-	reg_packet.entries = damage_types;
-	reg_packet.num_entries = sizeof(damage_types) / sizeof(damage_types[0]);
-
-	write_var_int(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, REGISTRY_DATA_ID);
-	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, reg_packet);
-	//print_registry_data(reg_packet);
-	nbt_free_tag(overworld);
-	
-	send_packet(write_buf_simple_server, max, m_player->conn.fd);
-      }
-      {
-	packet_ptr = write_buf_simple_server+4;
-	max = 0;
-	reg_packet.registry_id = lstr_static("minecraft:wolf_variant");
-	/* reg_packet.entries = NULL; */
-	/* reg_packet.num_entries = 0; */
-	nbt_tag_t* overworld_root = nbt_new_tag_compound();
-	nbt_tag_t* overworld = nbt_new_tag_compound();
-	nbt_set_tag_name(overworld, "assets", strlen("assets"));
-	{
-	  nbt_tag_t* angry = nbt_new_tag_string("angry", strlen("angry"));
-	  nbt_set_tag_name(angry, "angry", strlen("angry"));
-	  nbt_tag_compound_append(overworld, angry);
-
-	  nbt_tag_t* wild = nbt_new_tag_string("angry", strlen("angry"));
-	  nbt_set_tag_name(wild, "wild", strlen("wild"));
-	  nbt_tag_compound_append(overworld, wild);
-
-	  nbt_tag_t* tame = nbt_new_tag_string("angry", strlen("angry"));
-	  nbt_set_tag_name(tame, "tame", strlen("tame"));
-	  nbt_tag_compound_append(overworld, tame);
-
-	}
-	nbt_tag_compound_append(overworld_root, overworld);
-	
-	registry_data_entry damage_types[] = { { lstr_static("minecraft:cat"), &overworld_root } };
-	reg_packet.entries = damage_types;
-	reg_packet.num_entries = sizeof(damage_types) / sizeof(damage_types[0]);
-
-	write_var_int(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, REGISTRY_DATA_ID);
-	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, reg_packet);
-	//print_registry_data(reg_packet);
-	nbt_free_tag(overworld_root);
-	
-	send_packet(write_buf_simple_server, max, m_player->conn.fd);
-      }
-      {
-	packet_ptr = write_buf_simple_server+4;
-	max = 0;
-	reg_packet.registry_id = lstr_static("minecraft:wolf_sound_variant");
-	/* reg_packet.entries = NULL; */
-	/* reg_packet.num_entries = 0; */
-	nbt_tag_t* overworld = nbt_new_tag_compound();
-	{
-	  nbt_tag_t* ambient_sound = nbt_new_tag_string("ambient.crimson_forest.loop", strlen("ambient.crimson_forest.loop"));
-	  nbt_set_tag_name(ambient_sound, "ambient_sound", strlen("ambient_sound"));
-	  nbt_tag_compound_append(overworld, ambient_sound);
-
-	  nbt_tag_t* death_sound = nbt_new_tag_string("ambient.crimson_forest.loop", strlen("ambient.crimson_forest.loop"));
-	  nbt_set_tag_name(death_sound, "death_sound", strlen("death_sound"));
-	  nbt_tag_compound_append(overworld, death_sound);
-	  
-	  nbt_tag_t* growl_sound = nbt_new_tag_string("ambient.crimson_forest.loop", strlen("ambient.crimson_forest.loop"));
-	  nbt_set_tag_name(growl_sound, "growl_sound", strlen("growl_sound"));
-	  nbt_tag_compound_append(overworld, growl_sound);
-
-	  nbt_tag_t* hurt_sound = nbt_new_tag_string("ambient.crimson_forest.loop", strlen("ambient.crimson_forest.loop"));
-	  nbt_set_tag_name(hurt_sound, "hurt_sound", strlen("hurt_sound"));
-	  nbt_tag_compound_append(overworld, hurt_sound);
-
-	  nbt_tag_t* pant_sound = nbt_new_tag_string("ambient.crimson_forest.loop", strlen("ambient.crimson_forest.loop"));
-	  nbt_set_tag_name(pant_sound, "pant_sound", strlen("pant_sound"));
-	  nbt_tag_compound_append(overworld, pant_sound);
-
-	  nbt_tag_t* whine_sound = nbt_new_tag_string("ambient.crimson_forest.loop", strlen("ambient.crimson_forest.loop"));
-	  nbt_set_tag_name(whine_sound, "whine_sound", strlen("whine_sound"));
-	  nbt_tag_compound_append(overworld, whine_sound);
-	  
-	}
-	
-	registry_data_entry damage_types[] = { { lstr_static("minecraft:cat"), &overworld } };
-	reg_packet.entries = damage_types;
-	reg_packet.num_entries = sizeof(damage_types) / sizeof(damage_types[0]);
-
-	write_var_int(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, REGISTRY_DATA_ID);
-	write_registry_data(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, reg_packet);
-	//print_registry_data(reg_packet);
-	nbt_free_tag(overworld);
-	
-	send_packet(write_buf_simple_server, max, m_player->conn.fd);
-      }
+      send_registry_packet(server, player_num, write_buf_simple_server, WRITE_BUF_SIMPLE_SERVER_SIZE);
 
       {// finish configuration
 	packet_ptr = write_buf_simple_server+4;
 	max = 0;
 	write_var_int(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, FINISH_CONFIGURATION_ID);
-	finish_configuration config;
-	write_finish_configuration(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, config);
+	//finish_configuration config;
+	
+	//write_finish_configuration(&packet_ptr, &max, WRITE_BUF_SIMPLE_SERVER_SIZE, config);
 	send_packet(write_buf_simple_server, max, m_player->conn.fd);
+	puts("finishing login");
       }      
     } else if (packet_type == ACKGNOWLEDGE_SERVER_CONFIGURATION_ID) {
-      //puts("\nconfiguration finished\n");
+      puts("\nconfiguration finished\n");
       m_player->conn.connection_state = 4; // yippee, play state
       {
 	login_play play;
-	play.eid = player_num;
+	play.eid = player_num+1;
 	play.is_hardcore = 0;
 	lstr dim_names[] = { lstr_static("minecraft:overworld") };
 	play.dimension_names = &*dim_names;
@@ -823,7 +235,7 @@ int handle_player_packet(simple_server *server, int player_num, uint8_t *packet_
 	play.dimension_type = 0;
 	play.dimension_name = lstr_static("minecraft:overworld");
 	play.hashed_seed = 0;
-	play.game_mode = 1;
+	play.game_mode = 0;
 	play.prev_game_mode = -1;
 	play.is_debug = 0;
 	play.is_flat = 0;
@@ -831,7 +243,7 @@ int handle_player_packet(simple_server *server, int player_num, uint8_t *packet_
 	play.portal_cooldown = 10;
 	play.sea_level = 10;
 	play.enforces_secure_chat = 0;
-
+	play.online_mode = 1;
 	send_login_play_packet(write_buf_simple_server, WRITE_BUF_SIMPLE_SERVER_SIZE, m_player->conn.fd, play);
       }      
       if(cb.finish_login_play)
@@ -1119,7 +531,7 @@ int start_server(simple_server *server, int port, simple_server_callback cb)
 	    puts("very bad stuff, no player id found");
 	  int nbytes;
 	  // handle data from a client
-	  uint8_t buf[1024];    // buffer for client data
+	  uint8_t buf[2048];    // buffer for client data
 	  if ((nbytes = read(i, buf, sizeof(buf))) <= 0) {
 	    // got error or connection closed by client
 	    if (nbytes == 0) {

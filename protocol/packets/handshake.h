@@ -4,5 +4,5 @@ PACKET(handshake,
        R(var_str, lstr, server_address);
        R(ushort, uint16_t, port);
        R(var_int, int32_t, intent);
-       );
+       )
 PACKET_ID(handshake, HANDSHAKE_ID)

@@ -1,4 +1,6 @@
 #include "packets/handshake.h"
+#include "packets/status_clientbound.h"
+#include "packets/status_serverbound.h"
 #include "packets/login_clientbound.h"
 #include "packets/login_serverbound.h"
 #include "packets/configuration_serverbound.h"
