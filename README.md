@@ -4,6 +4,8 @@ This is a minecraft server written in C, designed for comfort and low overhead, 
 
 ## todos
 ### ~~fix packet memory leaks, especially those in length prefixed lists~~
+### implement compression
+### implement auth
 ### make nbt library a more modern tape reader one, instead of the current "traditional" one
 ### remove mallocs from packet parsing
 ### make a schemad nbt reader and writer for nbt with a known structure using packet macros
