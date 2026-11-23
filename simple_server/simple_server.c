@@ -4,7 +4,7 @@
 
 
 
-simple_server* allocate_simple_server(int max_players) {
+simple_server* allocate_simple_server(int max_players, void *ctx) {
   simple_server *server = malloc(sizeof(simple_server));
   server->players = malloc(sizeof(player*)*max_players);
   server->player_slots = malloc(sizeof(uint8_t)*max_players);
@@ -14,8 +14,12 @@ simple_server* allocate_simple_server(int max_players) {
   }
   server->max_players = max_players;
   server->should_stop = 0;
+  server->ctx = ctx;
   server->world_data.world_height = 384;// default
   return server;
+}
+static inline int floor_chunk_coord(float block_coord) {
+  return (int)floorf(block_coord / 16.0f);
 }
 
 
@@ -24,6 +28,7 @@ int allocate_player(simple_server *server, int fd) {
   for (int i = 0; i < server->max_players; i++) {
     if(server->player_slots[i] != 1) {
       server->players[i] = create_player(fd);
+      server->players[i]->id = i;
       server->player_slots[i] = 1;
       return i;
     }
@@ -31,9 +36,11 @@ int allocate_player(simple_server *server, int fd) {
   return -1;
 }
 
-void deallocate_player(simple_server *server, int player_id) {
+void deallocate_player(simple_server *server, simple_server_callback cb, int player_id) {
   if(server->player_slots[player_id]) {
     puts("deallocating player");
+    if(cb.player_disconnected)
+      cb.player_disconnected(server, player_id);
     /* if(server->cb.player_leave) */
     /*   server->cb.player_leave(server, player_id); */
     FD_CLR(server->players[player_id]->conn.fd, &server->master); // remove from master set
@@ -79,8 +86,9 @@ void on_chunk_move(simple_server *server, int player_num, mc_location old_locati
     if(crossed_z_chunk_bound)
       direction[1] = (new_location.z < old_location.z) ? -1 : 1;
 
-    int new_chunk_x = (int)round(new_location.x/16);
-    int new_chunk_z = (int)round(new_location.z/16);
+    int new_chunk_x = floor_chunk_coord(new_location.x);
+    int new_chunk_z = floor_chunk_coord(new_location.z);
+
     /* new_chunk_x += direction[0]+WORLD_GEN_LIMIT; */
     /* new_chunk_z += direction[1]+WORLD_GEN_LIMIT; */
     send_set_center_chunk(write_buf_simple_server, WRITE_BUF_SIMPLE_SERVER_SIZE, server->players[player_num]->conn.fd, new_chunk_x, new_chunk_z);
@@ -115,7 +123,7 @@ int handle_player_packet(simple_server *server, int player_num, uint8_t *packet_
   int error = read_var_int(&packet_buf, &pos, buf_len, &packet_type);
   if(error) {
     printf("error in client, %d\n", error);
-    deallocate_player(server, player_num);
+    deallocate_player(server, cb, player_num);
     return 1;
   }
   if(cb.packet_callback)
@@ -135,12 +143,12 @@ int handle_player_packet(simple_server *server, int player_num, uint8_t *packet_
   if (m_player->conn.connection_state == 0 && packet_type == HANDSHAKE_ID) {
     handshake shake;
     int error = read_handshake(&buf_ptr, &pos, buf_len, &shake);
-    print_handshake(shake, 0);
+    //print_handshake(shake, 0);
 
     // we dont handle anything other than login right now
     if (shake.intent != 2 && shake.intent != 1) {
       printf("error reading intent: %d\n", error);
-      deallocate_player(server, player_num);
+      deallocate_player(server, cb, player_num);
       free(raw_data);
       return 1;
     }
@@ -150,14 +158,14 @@ int handle_player_packet(simple_server *server, int player_num, uint8_t *packet_
     if (packet_type == STATUS_REQUEST_ID) {
       send_status_response_packet(write_buf_simple_server, WRITE_BUF_SIMPLE_SERVER_SIZE, server->players[player_num]->conn.fd,
 			   (status_response){
-			     .json_response = lstr_static("{\n    \"version\": {\n        \"name\": \"1.21.11\",\n        \"protocol\": 775\n    },\n    \"players\": {\n        \"max\": 2028,\n        \"online\": 2026,\n        \"sample\": [\n            {\n                \"name\": \"thinkofdeath\",\n                \"id\": \"4566e69f-c907-48ee-8d71-d7ba5aa00d20\"\n            }\n        ]\n    },\n    \"description\": {\n        \"text\": \"Hello, world!\"\n    },\n    \"favicon\": \"data:image\/png;base64,<data>\",\n    \"enforcesSecureChat\": false\n}")
+			     .json_response = lstr_static("{\n    \"version\": {\n        \"name\": \"26.2\",\n        \"protocol\": 776\n    },\n    \"players\": {\n        \"max\": 2028,\n        \"online\": 2026,\n        \"sample\": [\n            {\n                \"name\": \"thinkofdeath\",\n                \"id\": \"4566e69f-c907-48ee-8d71-d7ba5aa00d20\"\n            }\n        ]\n    },\n    \"description\": {\n        \"text\": \"Hello, world!\"\n    },\n    \"favicon\": \"data:image\/png;base64,<data>\",\n    \"enforcesSecureChat\": false\n}")
 			   });
     }
   } else if (m_player->conn.connection_state == 2) {
     if (packet_type == LOGIN_START_ID) {
       login_start login_s;
       read_login_start(&buf_ptr, &pos, buf_len, &login_s);
-      print_login_start(login_s, 0);
+      //print_login_start(login_s, 0);
       int i;
       for (i = 0; i < 16; i++) {
 	if(i < login_s.name.len)
@@ -195,13 +203,13 @@ int handle_player_packet(simple_server *server, int player_num, uint8_t *packet_
     if (packet_type == CLIENT_INFORMATION_CONFIGURATION_ID) {
       client_information_configuration config_s;
       read_client_information_configuration(&buf_ptr, &pos, buf_len, &config_s);
-      print_client_information_configuration(config_s, 0);
+      //print_client_information_configuration(config_s, 0);
       free_client_information_configuration(config_s);
       
     } else if (packet_type == SERVERBOUND_KNOWN_PACKS_CONFIGURATION_ID) {
       serverbound_known_packs config_s;
       read_serverbound_known_packs(&buf_ptr, &pos, buf_len, &config_s);
-      print_serverbound_known_packs(config_s, 0);
+      //print_serverbound_known_packs(config_s, 0);
       free_serverbound_known_packs(config_s);
       uint8_t *packet_ptr;
       send_registry_packet(server, player_num, write_buf_simple_server, WRITE_BUF_SIMPLE_SERVER_SIZE);
@@ -248,11 +256,12 @@ int handle_player_packet(simple_server *server, int player_num, uint8_t *packet_
       }      
       if(cb.finish_login_play)
 	cb.finish_login_play(server, player_num);
-      if(cb.player_load_chunks)
-	for(int x = -server->world_data.view_distance-1; x < server->world_data.view_distance+1; x++)
-	  for(int y = -server->world_data.view_distance-1; y < server->world_data.view_distance+1; y++)
-	    cb.player_load_chunks(server, player_num, x+(server->players[player_num]->loc.x/16), y+(server->players[player_num]->loc.z/16));
-
+      int spawn_chunk_x = floor_chunk_coord(server->players[player_num]->loc.x);
+      int spawn_chunk_z = floor_chunk_coord(server->players[player_num]->loc.z);
+      send_set_center_chunk(write_buf_simple_server, WRITE_BUF_SIMPLE_SERVER_SIZE, server->players[player_num]->conn.fd, spawn_chunk_x, spawn_chunk_z);
+      for(int x = -server->world_data.view_distance-1; x < server->world_data.view_distance+1; x++)
+	for(int y = -server->world_data.view_distance-1; y < server->world_data.view_distance+1; y++)
+	  cb.player_load_chunks(server, player_num, x+spawn_chunk_x, y+spawn_chunk_z);
     }
   } else if (m_player->conn.connection_state == 4) { // play
     if (packet_type == SET_PLAYER_POSITION_ID) {
@@ -338,7 +347,7 @@ void handle_packet(simple_server *server, int player_num, uint8_t *buf, int nbyt
   int error = read_var_int(&read_buf, &pos, nbytes, &packet_len);
   if (error) {
     printf("error reading len: %d\n", error); // todo -- append to backlog
-    deallocate_player(server, player_num);
+    deallocate_player(server, cb, player_num);
     return;
   }
   uint32_t remaining_data = nbytes-pos;
@@ -367,7 +376,7 @@ void handle_packet(simple_server *server, int player_num, uint8_t *buf, int nbyt
   if (error) {
 
     free(read_buf_original); // done, at last
-    deallocate_player(server, player_num);
+    deallocate_player(server, cb, player_num);
     return;
   }
   if (more) {
@@ -436,7 +445,6 @@ int start_server(simple_server *server, int port, simple_server_callback cb)
   fdmax = listener; // so far, it's this one
   struct timespec start_time, current_time;
   long elapsed_ns; // Nanoseconds
-  const long target_ns = 20000; // 20 milliseconds in nanoseconds
 
   clock_gettime(CLOCK_MONOTONIC, &start_time); // Get start time
     
@@ -451,14 +459,16 @@ int start_server(simple_server *server, int port, simple_server_callback cb)
     //puts("waiting");
     struct timeval timeout;
     timeout.tv_sec = 0;
-    timeout.tv_usec = 20000; // 20 milliseconds
+    timeout.tv_usec = server->target_ns; // 20 milliseconds
+    if(cb.loop_callback)
+      cb.loop_callback(server);
     int select_ret = select(fdmax+1, &read_fds, NULL, NULL, &timeout);
     clock_gettime(CLOCK_MONOTONIC, &current_time); // Get current time
 
     elapsed_ns = ((int64_t)current_time.tv_sec - (int64_t)start_time.tv_sec) * (int64_t)1000000000
          + ((int64_t)current_time.tv_nsec - (int64_t)start_time.tv_nsec);
 
-    if (elapsed_ns >= target_ns) {
+    if (elapsed_ns >= server->target_ns) {
       // user tick callback
       if(cb.tick_callback)
 	cb.tick_callback(server);
@@ -541,7 +551,7 @@ int start_server(simple_server *server, int port, simple_server_callback cb)
 	    } else {
 	      perror("recv");
 	    }
-	    deallocate_player(server, player_num);
+	    deallocate_player(server, cb, player_num);
 	    FD_CLR(i, &server->master); // remove from master set
 		    
 	  } else {

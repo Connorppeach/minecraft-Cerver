@@ -2,6 +2,9 @@
 #include "../protocol/packets.h"
 #include <sys/socket.h>
 #include <stdio.h>
+#include <errno.h>
+#include <stdlib.h>
+#include <string.h>
 
 int vi_size(int val) {
   uint8_t header[5];
@@ -10,19 +13,50 @@ int vi_size(int val) {
   write_var_int(&header_ptr, &header_len, 5, val);
   return header_len;
 }
+
+static bit_set full_light_mask(int num_sections) {
+  bit_set mask;
+  mask.data_count = (num_sections + 63) / 64;
+  mask.data = calloc(mask.data_count, sizeof(int64_t));
+  for (int i = 0; i < num_sections; i++) {
+    mask.data[i / 64] |= (int64_t)1 << (i % 64);
+  }
+  return mask;
+}
+
+static light_array *fullbright_light_arrays(int num_sections) {
+  light_array *arrays = malloc(num_sections * sizeof(light_array));
+  for (int i = 0; i < num_sections; i++) {
+    arrays[i].data_len = 2048;
+    arrays[i].data = malloc(2048);
+    memset(arrays[i].data, 0xFF, 2048);
+  }
+  return arrays;
+}
+
+static void free_light_arrays(light_array *arrays, int num_sections) {
+  for (int i = 0; i < num_sections; i++) {
+    free(arrays[i].data);
+  }
+  free(arrays);
+}
 int sendall(int sockfd, const uint8_t *buf, size_t len) {
-    int total = 0;        // how many bytes we've sent
-    int bytesleft = len;  // how many we have left to send
+    int total = 0;        
+    int bytesleft = len;  
     int n;
 
     while (total < len) {
         n = send(sockfd, buf + total, bytesleft, MSG_NOSIGNAL);
         if (n == -1) {
             // handle errors here, e.g., EAGAIN or EWOULDBLOCK for non-blocking sockets
-            break; 
-        }
-        total += n;
-        bytesleft -= n;
+	  if(n == ECONNRESET) {
+	    perror("failed to send");
+            break;
+	  }
+        } else {
+	  total += n;
+	  bytesleft -= n;
+	}
     }
 
     return (n == -1) ? -1 : 0; 
@@ -41,27 +75,31 @@ void send_packet(uint8_t *packet_buf, int packet_len, int fd) {
   int total_len = header_len + packet_len;
   
   int sent = sendall(fd, send_ptr, total_len);
-  if(sent)
-    puts("failed to send all data, very bad");
+  if(sent) {
+    //puts("failed to send all data, very bad");
+    perror("failed to send");
+  }
   /* printf("header_len %d, packet_len %d, total_len %d, sent %d\n",  */
   /*        header_len, packet_len, total_len, sent); */
 }
 
 
 
-int send_chunk_packet(uint8_t *write_buf, uint32_t packet_max_len, int player_fd, chunk_section *sections, int num_sections, int32_t x, int32_t z) {
+int send_chunk_packet(uint8_t *write_buf, uint32_t packet_max_len, int player_fd, cerver_chunk_section *sections, int num_sections, int32_t x, int32_t z) {
   chunk_data_and_update_light packet;
   packet.heightmap_count = 0;
   packet.block_entities_count = 0;
   packet.x = x;
   packet.y = z;
 
-  packet.o1 = 0;
-  packet.o2 = 0;
-  packet.o3 = 0;
-  packet.o4 = 0;
-  packet.o5 = 0;
-  packet.o6 = 0;
+  packet.sky_light_mask = full_light_mask(num_sections);
+  packet.block_light_mask = full_light_mask(num_sections);
+  packet.empty_sky_light_mask = (bit_set){ .data = NULL, .data_count = 0 };
+  packet.empty_block_light_mask = (bit_set){ .data = NULL, .data_count = 0 };
+  packet.sky_light_arrays = fullbright_light_arrays(num_sections);
+  packet.sky_light_array_count = num_sections;
+  packet.block_light_arrays = fullbright_light_arrays(num_sections);
+  packet.block_light_array_count = num_sections;
 
 
   uint8_t *packet_ptr = write_buf+4;
@@ -72,11 +110,14 @@ int send_chunk_packet(uint8_t *write_buf, uint32_t packet_max_len, int player_fd
   uint32_t chunk_data_max = 0;
   
   for(int i = 0; i < num_sections; i++) {
-    // write chunk data to our array
 
-    int error = write_chunk_section(&chunk_data_ptr, &chunk_data_max, chunk_data_max_w, sections[i]);
+    int error = write_cerver_chunk_section(&chunk_data_ptr, &chunk_data_max, chunk_data_max_w, sections[i]);
     if (error) {
       printf("error while writing chunk section: %d\n", error);
+      free(packet.sky_light_mask.data);
+      free(packet.block_light_mask.data);
+      free_light_arrays(packet.sky_light_arrays, num_sections);
+      free_light_arrays(packet.block_light_arrays, num_sections);
       return error;
     }    
   }
@@ -84,6 +125,10 @@ int send_chunk_packet(uint8_t *write_buf, uint32_t packet_max_len, int player_fd
   packet.data_len = chunk_data_max;
   write_var_int(&packet_ptr, &max, packet_max_len-4, CHUNK_DATA_AND_UPDATE_LIGHT_ID);
   int error = write_chunk_data_and_update_light(&packet_ptr, &max, packet_max_len-4, packet);
+  free(packet.sky_light_mask.data);
+  free(packet.block_light_mask.data);
+  free_light_arrays(packet.sky_light_arrays, num_sections);
+  free_light_arrays(packet.block_light_arrays, num_sections);
   if (error) {
     printf("error: %d\n", error);
     return error;
@@ -99,12 +144,14 @@ void send_raw_chunk_packet(uint8_t *write_buf, uint32_t packet_max_len, int play
   packet.x = x;
   packet.y = z;
 
-  packet.o1 = 0;
-  packet.o2 = 0;
-  packet.o3 = 0;
-  packet.o4 = 0;
-  packet.o5 = 0;
-  packet.o6 = 0;
+  packet.sky_light_mask = full_light_mask(num_sections);
+  packet.block_light_mask = full_light_mask(num_sections);
+  packet.empty_sky_light_mask = (bit_set){ .data = NULL, .data_count = 0 };
+  packet.empty_block_light_mask = (bit_set){ .data = NULL, .data_count = 0 };
+  packet.sky_light_arrays = fullbright_light_arrays(num_sections);
+  packet.sky_light_array_count = num_sections;
+  packet.block_light_arrays = fullbright_light_arrays(num_sections);
+  packet.block_light_array_count = num_sections;
 
 
   uint8_t *packet_ptr = write_buf+4;
@@ -115,7 +162,7 @@ void send_raw_chunk_packet(uint8_t *write_buf, uint32_t packet_max_len, int play
   uint32_t chunk_data_max = 0;
   
 
-  chunk_section section;
+  cerver_chunk_section section;
   section.block_count = 4096;
   
   /* section.block_states.type = PALETTED_CONTAINER_TYPE_BLOCK; */
@@ -143,9 +190,13 @@ void send_raw_chunk_packet(uint8_t *write_buf, uint32_t packet_max_len, int play
     section.block_states = p_blocks;
     section.biomes = p_biomes;
     
-    int error = write_chunk_section(&chunk_data_ptr, &chunk_data_max, chunk_data_max_w, section);
+    int error = write_cerver_chunk_section(&chunk_data_ptr, &chunk_data_max, chunk_data_max_w, section);
     if (error) {
       printf("error while writing chunk section: %d\n", error);
+      free(packet.sky_light_mask.data);
+      free(packet.block_light_mask.data);
+      free_light_arrays(packet.sky_light_arrays, num_sections);
+      free_light_arrays(packet.block_light_arrays, num_sections);
       return;
     }    
   }
@@ -153,6 +204,10 @@ void send_raw_chunk_packet(uint8_t *write_buf, uint32_t packet_max_len, int play
   packet.data_len = chunk_data_max;
   write_var_int(&packet_ptr, &max, packet_max_len-4, CHUNK_DATA_AND_UPDATE_LIGHT_ID);
   int error = write_chunk_data_and_update_light(&packet_ptr, &max, packet_max_len-4, packet);
+  free(packet.sky_light_mask.data);
+  free(packet.block_light_mask.data);
+  free_light_arrays(packet.sky_light_arrays, num_sections);
+  free_light_arrays(packet.block_light_arrays, num_sections);
   if (error) {
     printf("error: %d\n", error);
     return;

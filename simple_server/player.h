@@ -5,6 +5,7 @@
 #include "../protocol/rw.h"
 
 typedef struct Player {
+  int id; // default initialized to player slot, but intended to hold network id.
   struct {
     int fd;
     uint8_t* backlog;

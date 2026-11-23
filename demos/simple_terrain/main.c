@@ -52,7 +52,7 @@ uint64_t get_hash_at_point(int x, int y, int z, int seed) {
 }
 
 typedef struct {
-  chunk_section sections[24];
+  cerver_chunk_section sections[24];
 } chunk;
 
 
@@ -428,10 +428,10 @@ int main(void)
   }
   stdin_fd = fileno(stdin); // Get file descriptor for stdin
   fcntl(stdin_fd, F_SETFL, fcntl(stdin_fd, F_GETFL) | O_NONBLOCK);
-  simple_server *server =  allocate_simple_server(MAX_PLAYERS);
+  simple_server *server =  allocate_simple_server(MAX_PLAYERS, NULL);
   server->world_data.view_distance = VIEW_DISTANCE;
   puts("starting server");
-  simple_server_callback cb = (simple_server_callback){ handle_packet_cb, tick_callback, finish_configuration_cb, send_chunks, on_move_cb };
+  simple_server_callback cb = (simple_server_callback){ handle_packet_cb, tick_callback, NULL, finish_configuration_cb, NULL, send_chunks, on_move_cb };
   
   start_server(server, PORT, cb);
   fcntl(stdin_fd, F_SETFL, fcntl(stdin_fd, F_GETFL) & ~O_NONBLOCK);

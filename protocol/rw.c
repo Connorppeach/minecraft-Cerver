@@ -7,39 +7,11 @@
 #define NBT_IMPLEMENTATION
 #include "../libnbt/nbt.h"
 
-
-
-#define SEGMENT_BITS 0x7F
-#define CONTINUE_BIT 0x80
-
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 
 
-int read_bool(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, uint8_t *out) {
-  if (*pos+1 > max)
-    return ERR_TOO_FEW_BYTES;
-  (*pos)++;
-  uint8_t m_out = *((*packet_buffer)++);
-  if (m_out > 1)
-    return ERR_INVALID_RANGE;
-  *out = m_out;
-  
-  return 0;
-}
 
-
-
-
-int read_byte(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, int8_t *out) {
-  if (*pos+1 >= max)
-    return ERR_TOO_FEW_BYTES;
-
-  (*pos)++;
-  *out = *((*packet_buffer)++);
-  
-  return 0;
-}
 
 struct buffer_data {
   uint8_t **packet_buffer;
@@ -74,171 +46,6 @@ int read_network_nbt(uint8_t **packet_buffer, unsigned int *pos, unsigned int ma
 }
 
 
-int read_ubyte(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, uint8_t *out) {
-  if (*pos+1 > max)
-    return ERR_TOO_FEW_BYTES;
-
-  (*pos)++;
-  *out = *((*packet_buffer)++);
-  
-  return 0;
-}
-
-int read_short(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, int16_t *out) {
-  if (*pos+2 > max)
-    return ERR_TOO_FEW_BYTES;
-
-  (*pos)+=2;
-  *out = *((*packet_buffer)++)<<8;
-  *out |= *((*packet_buffer)++);
-  
-  return 0;
-}
-int read_ushort(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, uint16_t *out) {
-  if (*pos+2 > max)
-    return ERR_TOO_FEW_BYTES;
-
-  (*pos)+=2;
-  *out = *((*packet_buffer)++)<<8;
-  *out |= *((*packet_buffer)++);
-  
-  return 0;
-}
-
-int read_int(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, int32_t *out) {
-  if (*pos+4 > max)
-    return ERR_TOO_FEW_BYTES;
-
-  (*pos)+=4;
-  *out = *((*packet_buffer)++)<<24;
-  *out |= *((*packet_buffer)++)<<16;
-  *out |= *((*packet_buffer)++)<<8;
-  *out |= *((*packet_buffer)++);
-  
-  return 0;
-}
-int read_uint(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, uint32_t *out) {
-  if (*pos+4 > max)
-    return ERR_TOO_FEW_BYTES;
-
-  (*pos)+=4;
-  *out = *((*packet_buffer)++)<<24;
-  *out |= *((*packet_buffer)++)<<16;
-  *out |= *((*packet_buffer)++)<<8;
-  *out |= *((*packet_buffer)++);
-  
-  return 0;
-}
-int read_long(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, int64_t *out) {
-  if (*pos+8 > max)
-    return ERR_TOO_FEW_BYTES;
-
-  (*pos)+=8;
-  *out = ((uint64_t)*((*packet_buffer)++))<<56;
-  *out |= ((uint64_t)*((*packet_buffer)++))<<48;
-  *out |= ((uint64_t)*((*packet_buffer)++))<<40;
-  *out |= ((uint64_t)*((*packet_buffer)++))<<32;
-  *out |= ((uint64_t)*((*packet_buffer)++))<<24;
-  *out |= ((uint64_t)*((*packet_buffer)++))<<16;
-  *out |= ((uint64_t)*((*packet_buffer)++))<<8;
-  *out |= ((uint64_t)*((*packet_buffer)++));
-  
-  return 0;
-}
-int read_float(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, float *out) {
-  if (*pos+4 > max)
-    return ERR_TOO_FEW_BYTES;
-  uint32_t out_l;
-  (*pos)+=4;
-  out_l = (uint32_t)*((*packet_buffer)++)<<24;
-  out_l |= (uint32_t)*((*packet_buffer)++)<<16;
-  out_l |= (uint32_t)*((*packet_buffer)++)<<8;
-  out_l |= (uint32_t)*((*packet_buffer)++);
-  memcpy(out, &out_l, sizeof(out_l));
-  return 0;
-}
-
-int read_double(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, double *out) {
-  if (*pos+8 > max)
-    return ERR_TOO_FEW_BYTES;
-
-  uint64_t out_l;
-  (*pos)+=8;
-  out_l = ((uint64_t)*((*packet_buffer)++))<<56;
-  out_l |= ((uint64_t)*((*packet_buffer)++))<<48;
-  out_l |= ((uint64_t)*((*packet_buffer)++))<<40;
-  out_l |= ((uint64_t)*((*packet_buffer)++))<<32;
-  out_l |= ((uint64_t)*((*packet_buffer)++))<<24;
-  out_l |= ((uint64_t)*((*packet_buffer)++))<<16;
-  out_l |= ((uint64_t)*((*packet_buffer)++))<<8;
-  out_l |= ((uint64_t)*((*packet_buffer)++));
-  memcpy(out, &out_l, sizeof(out_l));
-  return 0;
-}
-
-int read_var_int(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, int32_t *out) {
-  if (*pos+1 > max)
-    return ERR_TOO_FEW_BYTES;
-
-  int32_t value = 0;
-  int32_t position = 0;
-  uint8_t currentByte;
-  
-  while (1) {
-    int read_err = read_ubyte(packet_buffer, pos, max, &currentByte);
-    if (read_err)
-      return read_err;
-    value |= (currentByte & SEGMENT_BITS) << position;
-    
-    if ((currentByte & CONTINUE_BIT) == 0) break;
-    
-    position += 7;
-    
-    if (position >= 32) return ERR_VAR_NUM_TOO_LARGE;
-  }
-  *out = value;
-  return 0;
-}
-
-int read_var_long(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, int64_t *out) {
-  if (*pos+1 > max)
-    return ERR_TOO_FEW_BYTES;
-
-  int64_t value = 0;
-  int32_t position = 0;
-  uint8_t currentByte;
-  
-  while (1) {
-    int read_err = read_ubyte(packet_buffer, pos, max, &currentByte);
-    if (read_err)
-      return read_err;
-    value |= (currentByte & (int64_t)SEGMENT_BITS) << position;
-    
-    if ((currentByte & CONTINUE_BIT) == 0) break;
-    
-    position += 7;
-    
-    if (position >= 64) return ERR_VAR_NUM_TOO_LARGE;
-  }
-  *out = value;
-  return 0;
-}
-
-int read_var_str(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, lstr *out) {
-  int len;
-  int error = read_var_int(packet_buffer, pos, max, &len);
-  if(error) return error;
-  out->len = len;
-  out->str = (char *)*packet_buffer;
-  *packet_buffer += len;
-  return 0;
-}
-int read_uuid(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, uuid *out) {
-  int error = read_long(packet_buffer, pos, max, &out->high);
-  if(error) return error;
-  error = read_long(packet_buffer, pos, max, &out->low);
-  return error;
-}
 
 #define unpack(x) (MIN((long)x & (long)32767, 32766.0) * 2.0 / 32766.0 - 1.0)
 int read_lpvec3(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, lpvec3 *out) {
@@ -285,40 +92,9 @@ int read_position(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, 
   return 0;
 };
 
-// writers should go here
-int write_bool(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, uint8_t val) {
-  if (*pos+1 > max)
-    return ERR_TOO_FEW_BYTES;
-  if (val > 1)
-    return ERR_INVALID_RANGE;
 
-  (*pos)++;
 
-  *((*packet_buffer)++) = val;
 
-  
-  return 0;
-}
-
-int write_byte(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, int8_t val) {
-  if (*pos+1 >= max)
-    return ERR_TOO_FEW_BYTES;
-
-  (*pos)++;
-  *((*packet_buffer)++) = val;
-  
-  return 0;
-}
-
-int write_ubyte(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, uint8_t val) {
-  if (*pos+1 > max)
-    return ERR_TOO_FEW_BYTES;
-
-  (*pos)++;
-  *((*packet_buffer)++) = val;
-  
-  return 0;
-}
 
 size_t write_nbt_inner(void* userdata, uint8_t* data, size_t size) {
   struct buffer_data *s_data = userdata;
@@ -351,163 +127,7 @@ int write_network_nbt(uint8_t **packet_buffer, unsigned int *pos, unsigned int m
 }
 
 
-int write_short(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, int16_t val) {
-  if (*pos+2 > max)
-    return ERR_TOO_FEW_BYTES;
 
-  (*pos)+=2;
-  *((*packet_buffer)++) = (val>>8)&255;
-  *((*packet_buffer)++) = (val)&255;
-  
-  return 0;
-}
-
-int write_ushort(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, uint16_t val) {
-  if (*pos+2 > max)
-    return ERR_TOO_FEW_BYTES;
-
-  (*pos)+=2;
-  *((*packet_buffer)++) = (val>>8)&255;
-  *((*packet_buffer)++) = (val)&255;
-  
-  return 0;
-}
-
-
-int write_int(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, int32_t val) {
-  if (*pos+4 > max)
-    return ERR_TOO_FEW_BYTES;
-
-  (*pos)+=4;
-  *((*packet_buffer)++) = (val>>24)&255;
-  *((*packet_buffer)++) = (val>>16)&255;
-  *((*packet_buffer)++) = (val>>8)&255;
-  *((*packet_buffer)++) = (val)&255;
-  
-  return 0;
-}
-
-int write_uint(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, uint32_t val) {
-  if (*pos+4 > max)
-    return ERR_TOO_FEW_BYTES;
-
-  (*pos)+=4;
-  *((*packet_buffer)++) = (val>>24)&255;
-  *((*packet_buffer)++) = (val>>16)&255;
-  *((*packet_buffer)++) = (val>>8)&255;
-  *((*packet_buffer)++) = (val)&255;
-  
-  return 0;
-}
-
-int write_long(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, int64_t val) {
-  if (*pos+8 > max)
-    return ERR_TOO_FEW_BYTES;
-
-  (*pos)+=8;
-  *((*packet_buffer)++) = (val>>56)&255;
-  *((*packet_buffer)++) = (val>>48)&255;
-  *((*packet_buffer)++) = (val>>40)&255;
-  *((*packet_buffer)++) = (val>>32)&255;
-  *((*packet_buffer)++) = (val>>24)&255;
-  *((*packet_buffer)++) = (val>>16)&255;
-  *((*packet_buffer)++) = (val>>8)&255;
-  *((*packet_buffer)++) = (val)&255;
-  
-  return 0;
-}
-
-
-int write_float(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, float val_float) {
-  if (*pos+4 > max)
-    return ERR_TOO_FEW_BYTES;
-  uint32_t val = 0;
-  memcpy(&val, &val_float, sizeof(val_float));
-  (*pos)+=4;
-  *((*packet_buffer)++) = (val>>24)&255;
-  *((*packet_buffer)++) = (val>>16)&255;
-  *((*packet_buffer)++) = (val>>8)&255;
-  *((*packet_buffer)++) = (val)&255;
-  
-  
-  return 0;
-}
-
-int write_double(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, double val_double) {
-  if (*pos+8 > max)
-    return ERR_TOO_FEW_BYTES;
-  uint64_t val = 0;
-  memcpy(&val, &val_double, sizeof(val_double));
-
-  (*pos)+=8;
-  *((*packet_buffer)++) = (val>>56)&255;
-  *((*packet_buffer)++) = (val>>48)&255;
-  *((*packet_buffer)++) = (val>>40)&255;
-  *((*packet_buffer)++) = (val>>32)&255;
-  *((*packet_buffer)++) = (val>>24)&255;
-  *((*packet_buffer)++) = (val>>16)&255;
-  *((*packet_buffer)++) = (val>>8)&255;
-  *((*packet_buffer)++) = (val)&255;
-  
-  return 0;
-}
-
-int write_var_int(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, int32_t value) {
-  uint32_t x = value;
-  if (*pos+1 > max)
-    return ERR_TOO_FEW_BYTES;
-  int error;
-  while (1) {
-    
-    if ((x & ~SEGMENT_BITS) == 0) {
-      error = write_ubyte(packet_buffer, pos, max, x);
-      return error;
-    }
-    
-    error = write_ubyte(packet_buffer, pos, max, (x & SEGMENT_BITS) | CONTINUE_BIT);
-    if(error) return error;
-    x >>= 7;
-  };
-  
-}
-int write_var_long(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, int64_t value) {
-  uint64_t x = value;
-  if (*pos+1 > max)
-    return ERR_TOO_FEW_BYTES;
-  int error;
-  while (1) {
-    if ((x & ~((int64_t)SEGMENT_BITS)) == 0) {
-      error = write_byte(packet_buffer, pos, max, x);
-      return error;
-    }
-    
-    error = write_byte(packet_buffer, pos, max, (x & SEGMENT_BITS) | CONTINUE_BIT);
-    if(error) return error;
-    x >>= 7;
-  };
-}
-
-int write_var_str(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, lstr value) {
-  if (*pos+( value.len+1) > max)
-    return ERR_TOO_FEW_BYTES;
-  int error;
-  error = write_var_int(packet_buffer, pos, max, value.len);
-  if (error)
-    return error;
-  if (*pos+(value.len) > max)
-    return ERR_TOO_FEW_BYTES;
-  for (int i = 0; i < value.len; i++)
-    *((*packet_buffer)++) = value.str[i];
-  *pos += value.len;
-  return 0;
-}
-
-int write_uuid(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, uuid val) {
-  int error = write_long(packet_buffer, pos, max, val.high);
-  if(error) return error;
-  error = write_long(packet_buffer, pos, max, val.low);
-  return error;
-}
 #define pack(x) (long)round((((double)x) * 0.5 + 0.5) * 32766.0)
 int write_lpvec3(uint8_t **packet_buffer, unsigned int *pos, unsigned int max, lpvec3 to_write) {
   double x = to_write.x;
@@ -543,17 +163,7 @@ int write_position(uint8_t **packet_buffer, unsigned int *pos, unsigned int max,
   return write_long(packet_buffer, pos, max, val);
 };
 
-void print_bool(uint8_t val, int indentation) {
-  if(val)
-    printf("true");
-  else
-    printf("false");
-};
 
-
-void print_byte(int8_t val, int indentation) {
-  printf("%d", val);
-};
 void print_nbt_tree(nbt_tag_t* tag, int indentation) {
   for (int i = 0; i < indentation; i++) {
     printf(" ");
@@ -651,44 +261,6 @@ void print_network_nbt(nbt_tag_t *val, int indentation) {
   print_nbt_tree(val, indentation);
 }
 
-void print_ubyte(uint8_t val, int indentation) {
-  printf("%hhu", val);
-};
-void print_short(int16_t val, int indentation) {
-  printf("%hd", val);
-};
-void print_ushort(uint16_t val, int indentation) {
-  printf("%hu", val);
-};
-void print_int(int32_t val, int indentation) {
-  printf("%d", val);
-};
-void print_uint(uint32_t val, int indentation) {
-  printf("%d", val);
-};
-void print_long(int64_t val, int indentation) {
-  printf("%ld", val);
-};
-void print_float(float val_float, int indentation) {
-  printf("%g", val_float);
-};
-void print_double(double val_double, int indentation) {
-  printf("%g", val_double);
-};
-void print_var_int(int32_t value, int indentation) {
-  print_int(value, indentation);
-};
-void print_var_long(int64_t value, int indentation) {
-  print_long(value, indentation);
-};
-void print_var_str(lstr value, int indentation) {
-  printf("%.*s", value.len, value.str);
-};
-void print_uuid(uuid value, int indentation) {
-  print_long(value.high, indentation);
-  printf(" ");
-  print_long(value.low, indentation);
-};
 
 void print_lpvec3(lpvec3 val, int indentation) {
   printf("[%lf, %lf, %lf]", val.x, val.y, val.z);

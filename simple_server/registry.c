@@ -1,10 +1,83 @@
 #include "registry.h"
 #define STRNLEN(str) str, strlen(str)
+//#define MINEHUT
+
 int send_registry_packet(simple_server *server, int player_num, uint8_t *write_buf_simple_server, unsigned int WRITE_BUF_SIMPLE_SERVER_SIZE) {
   player *m_player = server->players[player_num];
   registry_data reg_packet;
   uint8_t *packet_ptr;
   unsigned int max = 0;
+  send_update_tags_packet(write_buf_simple_server, WRITE_BUF_SIMPLE_SERVER_SIZE, m_player->conn.fd,
+			  (update_tags){
+			    .tag_list = (update_tags_tag_list[]){
+			      (update_tags_tag_list){
+				.tag_name = lstr_static("minecraft:damage_type"),
+				.tags = (update_tags_tag[]) {
+				  (update_tags_tag){
+				    .tag_name = lstr_static("minecraft:is_fire")
+				  },
+				  (update_tags_tag){
+				    .tag_name = lstr_static("minecraft:is_explosion")
+				  },
+				  (update_tags_tag){
+				    .tag_name = lstr_static("minecraft:bypasses_shield")
+				  }
+				},
+				.tags_count = 3
+			      },
+			      (update_tags_tag_list){
+				.tag_name = lstr_static("minecraft:block"),
+				.tags = (update_tags_tag[]) {
+				  (update_tags_tag){
+				    .tag_name = lstr_static("minecraft:infiniburn_overworld")
+				  }
+				},
+				.tags_count = 1
+			      },
+			      (update_tags_tag_list){
+				.tag_name = lstr_static("minecraft:banner_pattern"),
+				.tags = (update_tags_tag[11]) {
+				  (update_tags_tag){
+				    .tag_name = lstr_static("minecraft:pattern_item/flower")
+				  },
+				  (update_tags_tag){
+				    .tag_name = lstr_static("minecraft:pattern_item/bordure_indented")
+				  },
+				  (update_tags_tag){
+				    .tag_name = lstr_static("minecraft:pattern_item/creeper")
+				  },
+				  (update_tags_tag){
+				    .tag_name = lstr_static("minecraft:pattern_item/field_masoned")
+				  },
+				  (update_tags_tag){
+				    .tag_name = lstr_static("minecraft:pattern_item/flow")
+				  },
+				  /* (update_tags_tag){ */
+				  /*   .tag_name = lstr_static("minecraft:pattern_item/flower") */
+				  /* }, */
+				  (update_tags_tag){
+				    .tag_name = lstr_static("minecraft:pattern_item/globe")
+				  },
+				  (update_tags_tag){
+				    .tag_name = lstr_static("minecraft:pattern_item/guster")
+				  },
+				  (update_tags_tag){
+				    .tag_name = lstr_static("minecraft:pattern_item/mojang")
+				  },
+				  (update_tags_tag){
+				    .tag_name = lstr_static("minecraft:pattern_item/piglin")
+				  },
+				  (update_tags_tag){
+				    .tag_name = lstr_static("minecraft:pattern_item/skull")
+				  },
+				},
+				.tags_count = 10
+			      }
+			      
+			    },
+			    .tag_list_count = 3
+
+			  });
   // send emtpy registries
   {
     packet_ptr = write_buf_simple_server+4;
@@ -32,7 +105,7 @@ int send_registry_packet(simple_server *server, int player_num, uint8_t *write_b
 	nbt_tag_compound_append(compound, key1);
 	nbt_set_tag_name(key1, STRNLEN("test"));
 	reg_packet.entries =  (registry_data_entry[]){
-	  (registry_data_entry){.entry_id = banner_types_str[i], .data = &compound}
+	  (registry_data_entry){.entry_id = lstr_static(banner_types_str[i]), .data = &compound}
 	};
 	reg_packet.num_entries = 0;
 	/* reg_packet.entries = NULL; */
@@ -57,7 +130,11 @@ int send_registry_packet(simple_server *server, int player_num, uint8_t *write_b
     send_packet(write_buf_simple_server, max, m_player->conn.fd);
   }
   {
+#ifndef MINEHUT
     char damage_types_str[][64] = {"minecraft:spear", "minecraft:player_attack", "minecraft:cactus", "minecraft:campfire", "minecraft:cramming", "minecraft:dragon_breath", "minecraft:drown", "minecraft:dry_out", "minecraft:ender_pearl", "minecraft:fall", "minecraft:fly_into_wall", "minecraft:freeze", "minecraft:generic", "minecraft:generic_kill", "minecraft:hot_floor", "minecraft:in_fire", "minecraft:in_wall", "minecraft:lava", "minecraft:lightning_bolt", "minecraft:magic", "minecraft:on_fire", "minecraft:out_of_world", "minecraft:outside_border", "minecraft:stalagmite", "minecraft:starve", "minecraft:sweet_berry_bush", "minecraft:wither"}; 
+#else
+    char damage_types_str[][64] = {"minecraft:wither2"}; 
+#endif
     for (int i = 0; i < sizeof(damage_types_str) / sizeof(damage_types_str[0]); i++)
       {
 	packet_ptr = write_buf_simple_server+4;
@@ -191,9 +268,13 @@ int send_registry_packet(simple_server *server, int player_num, uint8_t *write_b
       nbt_set_tag_name(height, "height", strlen("height"));
       nbt_tag_compound_append(overworld, height);
 
-      nbt_tag_t* logical_height = nbt_new_tag_int(0);
+      nbt_tag_t* logical_height = nbt_new_tag_int(server->world_data.world_height);
       nbt_set_tag_name(logical_height, "logical_height", strlen("logical_height"));
       nbt_tag_compound_append(overworld, logical_height);
+
+      nbt_tag_t* effects = nbt_new_tag_string("minecraft:overworld", strlen("minecraft:overworld"));
+      nbt_set_tag_name(effects, "effects", strlen("effects"));
+      nbt_tag_compound_append(overworld, effects);
 
       nbt_tag_t* monster_spawn_light_level = nbt_new_tag_int(0);
       nbt_set_tag_name(monster_spawn_light_level, "monster_spawn_light_level", strlen("monster_spawn_light_level"));
@@ -219,7 +300,11 @@ int send_registry_packet(simple_server *server, int player_num, uint8_t *write_b
 	  
     }
 	
+#ifndef MINEHUT
     registry_data_entry damage_types[] = { { lstr_static("minecraft:overworld"), &overworld } };
+#else
+    registry_data_entry damage_types[] = { { lstr_static("minecraft:overworld2"), &overworld } };
+#endif
     reg_packet.entries = damage_types;
     reg_packet.num_entries = sizeof(damage_types) / sizeof(damage_types[0]);
 
@@ -244,8 +329,12 @@ int send_registry_packet(simple_server *server, int player_num, uint8_t *write_b
   }
 
   {
+#ifndef MINEHUT
       lstr trims[] = {lstr_static("minecraft:ponder_goat_horn")};
-    for (int i = 0; i < sizeof(trims)/sizeof(trims[0]); i++ ) {
+#else
+      lstr trims[] = {lstr_static("minecraft:3")};
+#endif      
+      for (int i = 0; i < sizeof(trims)/sizeof(trims[0]); i++ ) {//
       packet_ptr = write_buf_simple_server+4;
       max = 0;
       reg_packet.registry_id = lstr_static("minecraft:instrument");
@@ -278,7 +367,11 @@ int send_registry_packet(simple_server *server, int player_num, uint8_t *write_b
     }
   }
   {
+#ifndef MINEHUT
       lstr trims[] = {lstr_static("minecraft:13"), lstr_static("minecraft:cat"), lstr_static("minecraft:blocks"), lstr_static("minecraft:bounce"), lstr_static("minecraft:chirp"), lstr_static("minecraft:creator"), lstr_static("minecraft:creator_music_box"), lstr_static("minecraft:far"), lstr_static("minecraft:lava_chicken"), lstr_static("minecraft:mall"), lstr_static("minecraft:mellohi"), lstr_static("minecraft:stal"), lstr_static("minecraft:strad"), lstr_static("minecraft:ward"), lstr_static("minecraft:11"), lstr_static("minecraft:pigstep"), lstr_static("minecraft:wait"), lstr_static("minecraft:otherside"), lstr_static("minecraft:relic"), lstr_static("minecraft:5"), lstr_static("minecraft:4"), lstr_static("minecraft:3"), lstr_static("minecraft:2"), lstr_static("minecraft:1"), lstr_static("minecraft:0"), lstr_static("minecraft:precipice"), lstr_static("minecraft:tears")};
+#else
+      lstr trims[] = {lstr_static("minecraft:14")};      
+#endif
     for (int i = 0; i < sizeof(trims)/sizeof(trims[0]); i++ ) {
       packet_ptr = write_buf_simple_server+4;
       max = 0;
@@ -344,8 +437,11 @@ int send_registry_packet(simple_server *server, int player_num, uint8_t *write_b
 
 	  
     }
-	
+#ifndef MINEHUT	
     registry_data_entry damage_types[] = { { lstr_static("minecraft:earth"), &overworld } };
+#else
+    registry_data_entry damage_types[] = { { lstr_static("minecraft:3"), &overworld } };
+#endif
     reg_packet.entries = damage_types;
     reg_packet.num_entries = sizeof(damage_types) / sizeof(damage_types[0]);
 
@@ -382,7 +478,11 @@ int send_registry_packet(simple_server *server, int player_num, uint8_t *write_b
     send_packet(write_buf_simple_server, max, m_player->conn.fd);
   }
   {
+#ifndef MINEHUT	
     lstr trims[] = {lstr_static("minecraft:redstone"), lstr_static("minecraft:diamond"), lstr_static("minecraft:emerald"), lstr_static("minecraft:lapis"), lstr_static("minecraft:quartz"), lstr_static("minecraft:amethyst"), lstr_static("minecraft:iron"), lstr_static("minecraft:gold"), lstr_static("minecraft:copper"), lstr_static("minecraft:netherite"), lstr_static("minecraft:resin")};
+#else
+    lstr trims[] = { };
+#endif
     for (int i = 0; i < sizeof(trims)/sizeof(trims[0]); i++ ) {
       packet_ptr = write_buf_simple_server+4;
       max = 0;
@@ -466,8 +566,11 @@ int send_registry_packet(simple_server *server, int player_num, uint8_t *write_b
       }
 	  
     }
-	
+#ifndef MINEHUT	
     registry_data_entry damage_types[] = { { lstr_static("minecraft:plains"), &overworld } };
+#else
+    registry_data_entry damage_types[] = { };
+#endif
     reg_packet.entries = damage_types;
     reg_packet.num_entries = sizeof(damage_types) / sizeof(damage_types[0]);
 
@@ -551,11 +654,15 @@ int send_registry_packet(simple_server *server, int player_num, uint8_t *write_b
       nbt_tag_compound_append(overworld, baby_asset_id);
 
     }
-	
+#ifndef MINEHUT
     registry_data_entry damage_types[] = {
       { lstr_static("minecraft:temperate"), &overworld },
       { lstr_static("minecraft:cold"), &overworld },
       { lstr_static("minecraft:warm"), &overworld }};
+#else
+    registry_data_entry damage_types[] = {
+      {lstr_static("colon3:warm"), &overworld}};
+#endif	
     reg_packet.entries = damage_types;
     reg_packet.num_entries = sizeof(damage_types) / sizeof(damage_types[0]);
 
@@ -732,75 +839,7 @@ int send_registry_packet(simple_server *server, int player_num, uint8_t *write_b
       send_packet(write_buf_simple_server, max, m_player->conn.fd);
     }
   }
-  send_update_tags_packet(write_buf_simple_server, WRITE_BUF_SIMPLE_SERVER_SIZE, m_player->conn.fd,
-			  (update_tags){
-			    .tag_list = (update_tags_tag_list[]){
-			      (update_tags_tag_list){
-				.tag_name = lstr_static("minecraft:damage_type"),
-				.tags = (update_tags_tag[]) {
-				  (update_tags_tag){
-				    .tag_name = lstr_static("minecraft:is_fire")
-				  },
-				  (update_tags_tag){
-				    .tag_name = lstr_static("minecraft:is_explosion")
-				  },
-				  (update_tags_tag){
-				    .tag_name = lstr_static("minecraft:bypasses_shield")
-				  }
-				},
-				.tags_count = 3
-			      },
-			      (update_tags_tag_list){
-				.tag_name = lstr_static("minecraft:block"),
-				.tags = (update_tags_tag[]) {
-				  (update_tags_tag){
-				    .tag_name = lstr_static("minecraft:infiniburn_overworld")
-				  }
-				},
-				.tags_count = 1
-			      },
-			      (update_tags_tag_list){
-				.tag_name = lstr_static("minecraft:banner_pattern"),
-				.tags = (update_tags_tag[]) {
-				  (update_tags_tag){
-				    .tag_name = lstr_static("minecraft:pattern_item/flower")
-				  },
-				  (update_tags_tag){
-				    .tag_name = lstr_static("minecraft:pattern_item/bordure_indented")
-				  },
-				  (update_tags_tag){
-				    .tag_name = lstr_static("minecraft:pattern_item/creeper")
-				  },
-				  (update_tags_tag){
-				    .tag_name = lstr_static("minecraft:pattern_item/field_masoned")
-				  },
-				  (update_tags_tag){
-				    .tag_name = lstr_static("minecraft:pattern_item/flow")
-				  },
-				  (update_tags_tag){
-				    .tag_name = lstr_static("minecraft:pattern_item/flower")
-				  },
-				  (update_tags_tag){
-				    .tag_name = lstr_static("minecraft:pattern_item/globe")
-				  },
-				  (update_tags_tag){
-				    .tag_name = lstr_static("minecraft:pattern_item/guster")
-				  },
-				  (update_tags_tag){
-				    .tag_name = lstr_static("minecraft:pattern_item/mojang")
-				  },
-				  (update_tags_tag){
-				    .tag_name = lstr_static("minecraft:pattern_item/piglin")
-				  },
-				  (update_tags_tag){
-				    .tag_name = lstr_static("minecraft:pattern_item/skull")
-				  },
-				},
-				.tags_count = 11
-			      },
-			      
-			    },
-			    .tag_list_count = 3
-
-			  });
+  
+  
+  return 0;
 }

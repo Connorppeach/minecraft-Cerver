@@ -276,6 +276,14 @@ PACKET(chunk_block_entity,
        O(network_nbt, nbt_tag_t*, data);
        );
 
+PACKET(bit_set,
+       RL(long, int64_t, data, data_count);
+       );
+
+PACKET(light_array,
+       RL(ubyte, uint8_t, data, data_len);
+       );
+
 
 
 
@@ -340,7 +348,6 @@ int read_paletted_container_to_array(uint8_t *packet_buf, int32_t max, uint8_t m
       int long_index = i / entries_per_long;
       int bit_index = (i % entries_per_long) * bits_per_entry;
       
-      // if value has a smaller integer type, it may again be necessary to cast it to 64 bits.
       out[i] = palette[((data[long_index] >> bit_index) & entry_mask)];
     }
 	 
@@ -404,8 +411,8 @@ int create_paletted_container_from_entries(int32_t *block_states, uint8_t min_bp
   //printf("%d\n%d\n", bits_per_entry, n_distinct_values);
 
   while (n_distinct_values_2 > 0) {
-    n_distinct_values_2 &= (n_distinct_values_2 - 1); // Unsets the rightmost set bit
-    bits_per_entry++;      // Increment count
+    n_distinct_values_2 &= (n_distinct_values_2 - 1); 
+    bits_per_entry++;
   }
   bits_per_entry = MAX(min_bpe_indirect, bits_per_entry);
 
@@ -414,7 +421,7 @@ int create_paletted_container_from_entries(int32_t *block_states, uint8_t min_bp
     if(error) return error;
     error = write_var_int(&packet_buffer, &pos, max, distinct_values[0]);	
     if(error) return error;
-  } else if (bits_per_entry <= max_bpe_indirect) { // paletted
+  } else if (bits_per_entry <= max_bpe_indirect) { 
 
     error = write_ubyte(&packet_buffer, &pos, max, bits_per_entry);
     if(error) return error;
@@ -437,7 +444,6 @@ int create_paletted_container_from_entries(int32_t *block_states, uint8_t min_bp
       int bit_index = (i % entries_per_long) * bits_per_entry;
 
       data[long_index] &= ~(entry_mask << bit_index);
-      // if value has a smaller integer type, it may again be necessary to cast it to 64 bits.
       int data_idx = 0;
       for(int j = 0; j < n_distinct_values; j++)
 	if(block_states[i] == distinct_values[j])
@@ -470,7 +476,6 @@ int create_paletted_container_from_entries(int32_t *block_states, uint8_t min_bp
 
       //printf("%d\n", long_index);
       data[long_index] &= ~(entry_mask << bit_index);
-      // if value has a smaller integer type, it may again be necessary to cast it to 64 bits.
       data[long_index] |= (uint64_t)block_states[i] << bit_index;
     }
 	 
@@ -496,7 +501,7 @@ int create_paletted_container_from_entries(int32_t *block_states, uint8_t min_bp
 int create_paletted_container_from_entries(int32_t *block_states, uint8_t min_bpe_indirect, uint8_t max_bpe_indirect, uint8_t bits_per_entry_direct, int8_t palette_variant, paletted_container *out);
 #endif
 
-PACKET(chunk_section,
+PACKET(cerver_chunk_section,
        R(short, int16_t, block_count);
        R(short, int16_t, fluid_count);
        R(paletted_container, paletted_container, block_states);
@@ -508,12 +513,12 @@ PACKET(chunk_data_and_update_light,
        RL(heightmap, heightmap, heightmaps, heightmap_count);
        RL(ubyte, uint8_t, data, data_len);
        RL(chunk_block_entity, chunk_block_entity, block_entities, block_entities_count);
-       R(var_int, int32_t, o1);
-       R(var_int, int32_t, o2);
-       R(var_int, int32_t, o3);
-       R(var_int, int32_t, o4);
-       R(var_int, int32_t, o5);
-       R(var_int, int32_t, o6);
+       R(bit_set, bit_set, sky_light_mask);
+       R(bit_set, bit_set, block_light_mask);
+       R(bit_set, bit_set, empty_sky_light_mask);
+       R(bit_set, bit_set, empty_block_light_mask);
+       RL(light_array, light_array, sky_light_arrays, sky_light_array_count);
+       RL(light_array, light_array, block_light_arrays, block_light_array_count);
        );
 PACKET_ID(chunk_data_and_update_light, CHUNK_DATA_AND_UPDATE_LIGHT_ID)
 
@@ -880,3 +885,10 @@ PACKET(system_chat_message,
        R(bool, uint8_t, overlay);
        );
 PACKET_ID(system_chat_message, SYSTEM_CHAT_MESSAGE_ID)
+
+PACKET(player_abilities,
+       R(byte, uint8_t, flags);
+       R(float, float, flying_speed);
+       R(float, float, fov_modifier);
+       );
+PACKET_ID(player_abilities, PLAYER_ABILITIES_ID)

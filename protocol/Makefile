@@ -1,7 +1,7 @@
 CC=gcc  # /opt/intel/oneapi/compiler/latest/bin/icx
--CFLAGS=-I. -ggdb -Wall -O0 # -Ofast  -ftree-vectorize -march=corei7 -mtune=corei7 -fopenmp # -lstdc++  -fPIE
-DEPS=packets.o rw.o ../libnbt/miniz.o
-DEPS_PIC=packets.pic.o rw.pic.o ../libnbt/miniz.pic.o
+CFLAGS=-I. -ggdb -Wall -O0 # -Ofast  -ftree-vectorize -march=corei7 -mtune=corei7 -fopenmp # -lstdc++  -fPIE
+DEPS=packets.o rw.o
+DEPS_PIC=packets.pic.o rw.pic.o 
 
 %.pic.o: %.c
 	$(CC) -fpic -c $< $(CFLAGS) -o $@   

@@ -2,16 +2,10 @@
 #define _H_RW_CERVER_
 #include <stdint.h>
 #include "error_codes.h"
-typedef struct {
-  char *str;
-  int len;
-} lstr;
-#define lstr_static(str) (lstr){str, strlen(str)}
 
-typedef struct {
-  int64_t high;
-  int64_t low;
-} uuid;
+#include <rw/uuid.h>
+#include <rw/lstr.h>
+
 
 typedef struct {
   double x, y, z;

@@ -22,7 +22,7 @@ PACKET(game_profile,
 
 PACKET(login_success,
        R(game_profile, game_profile, profile);
-       R(uuid, uuid, session_id)
+       R(uuid, uuid, session_id);
        );
 PACKET_ID(login_success, LOGIN_SUCCESS_ID)
 

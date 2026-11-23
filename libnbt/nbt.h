@@ -39,7 +39,7 @@ extern "C" {
 #ifdef NBT_OWN_ZLIB
 #include NBT_OWN_ZLIB
 #else
-#include "miniz.h"
+#include <miniz.h>
 #endif
 
 #ifndef Z_DEFAULT_WINDOW_BITS

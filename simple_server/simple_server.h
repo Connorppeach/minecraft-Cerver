@@ -25,23 +25,27 @@ typedef struct {
     int32_t world_height;
     int8_t view_distance;
   } world_data;
+  size_t target_ns;
   uint8_t should_stop;
+  void *ctx;
 } simple_server;
 
 typedef struct {
   void (*packet_callback)(simple_server *server, int player_num, int packet_type, uint8_t *packet_buf, unsigned int buf_len);
   void (*tick_callback)(simple_server *server);
+  void (*loop_callback)(simple_server *server);
   void (*finish_login_play)(simple_server *server, int player_num);
+  void (*player_disconnected)(simple_server *server, int player_num);
   void (*player_load_chunks)(simple_server *server, int player_num, int x, int z);
   void (*on_move)(simple_server *server, int player_num, mc_location old_location, mc_location new_location);
 } simple_server_callback;
 
 int allocate_player(simple_server *server, int fd);
-void deallocate_player(simple_server *server, int player_id);
+void deallocate_player(simple_server *server, simple_server_callback cb, int player_id);
 
 
 // todo -- deallocate simple servers
-simple_server* allocate_simple_server(int max_players);
+simple_server* allocate_simple_server(int max_players, void *ctx);
 int start_server(simple_server *server, int port, simple_server_callback cb);
 
 

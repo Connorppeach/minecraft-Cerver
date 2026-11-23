@@ -1,4 +1,6 @@
 #ifndef _FILTER_H_
+#include <string.h>
+#include <stdio.h>
 // todos:
 // - assign severities
 #define PCRE2_CODE_UNIT_WIDTH 8

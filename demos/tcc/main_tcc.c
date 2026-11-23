@@ -1,5 +1,8 @@
 #include <errno.h>
+#include <dirent.h>
+#include <stdio.h>
 #include <libtcc.h>
+#include <linux/limits.h>
 
 #include "protocol/rw.h"
 #include "protocol/packets.h"
@@ -49,22 +52,54 @@ char* readfile(FILE *f) {
   return buffer;
 }
 
+int compileAllInDir(TCCState *s, char *basePath) {
+  char path[PATH_MAX];
+  struct dirent *dp;
+  DIR *dir = opendir(basePath);
+
+  // Unable to open directory stream
+  if (!dir)
+    return 0;
+
+  while ((dp = readdir(dir)) != NULL)
+    {
+      if (strcmp(dp->d_name, ".") != 0 && strcmp(dp->d_name, "..") != 0)
+        {
+	  strcpy(path, basePath);
+	  strcat(path, "/");
+	  strcat(path, dp->d_name);
+	  if(dp-> d_type != DT_DIR) {
+	    puts(dp->d_name);
+	    FILE *f = fopen(path, "r");
+	    char *data = readfile(f);
+	    if(!data) return 1;
+	    int err = tcc_compile_string(s, data);
+            printf("%s\n", dp->d_name);
+	  } else if (dp -> d_type == DT_DIR && strcmp(dp->d_name,".")!=0 && strcmp(dp->d_name,"..")!=0){
+	    // Construct new path from our base path
+
+	    if(compileAllInDir(s, path)) return 1;
+	  }
+        }
+    }
+
+  closedir(dir);
+}
+
 simple_server_callback create_server_callback_from_script(char *filename, simple_server *server) {
   simple_server_callback cb = { NULL, NULL, NULL, NULL };
   TCCState *s = tcc_new();
   tcc_set_output_type(s, TCC_OUTPUT_MEMORY);
+  tcc_add_sysinclude_path(s, "./tinycc/include");
   tcc_add_include_path(s, ".");
-  FILE *f = fopen(filename, "r");
-  if(!f) return cb;
-  char *data = readfile(f);
-  if(!data) return cb;
-  int err = tcc_compile_string(s, data);
   // add symbols
-
+  int err = compileAllInDir(s, filename);
   // utility macro
 #define TCC_ADD_SYMBOL(sym) tcc_add_symbol(s, #sym, &sym)
   // basic stuff your going to need
   TCC_ADD_SYMBOL(write_var_int);
+  tcc_add_library_path(s, ".");
+  
   TCC_ADD_SYMBOL(send_packet);
   // todo -- make this less stupid(possibly use the macro system?)
 #define PACKET(name, ...) TCC_ADD_SYMBOL(write_##name);
@@ -88,6 +123,10 @@ simple_server_callback create_server_callback_from_script(char *filename, simple
 
   void (*tick_callback)(simple_server *server) = tcc_get_symbol(s, "on_tick");
   if(tick_callback) cb.tick_callback = tick_callback;
+  void (*loop_callback)(simple_server *server) = tcc_get_symbol(s, "on_loop");
+  if(loop_callback) cb.loop_callback = loop_callback;
+
+
   void (*packet_callback)(simple_server *server, int player_num, int packet_type, uint8_t *packet_buf, unsigned int buf_len) = tcc_get_symbol(s, "on_packet");
   if(packet_callback) cb.packet_callback = packet_callback;
 
@@ -101,7 +140,7 @@ simple_server_callback create_server_callback_from_script(char *filename, simple
   if(player_load_chunks) cb.player_load_chunks = player_load_chunks;
 
   void (*init)(simple_server *server)  = tcc_get_symbol(s, "init");
-  if(player_load_chunks) init(server);
+  if(init) init(server);
   
   
   return cb;
@@ -110,9 +149,9 @@ simple_server_callback create_server_callback_from_script(char *filename, simple
 int main(void)
 {
   simple_server *server =  allocate_simple_server(MAX_PLAYERS);
-
-  puts("starting server");
-  simple_server_callback cb = create_server_callback_from_script("./server_script.c", server);
   
+  puts("starting server");
+  simple_server_callback cb = create_server_callback_from_script("./scripts/", server);
+  puts("Done (14.429s)! For help, type \"help\"");
   start_server(server, PORT, cb);
 }
